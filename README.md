@@ -1,405 +1,245 @@
-Semi_project3 README
-====================
+# Semi_project3
 
-### Documents
-- [README](README.md)
-- [Docker](README_DOCKER.md)
-- [Operations](README_OPERATIONS.md)
--------------------
-1. Project Overview
--------------------
+## Overview
 
-Semi_project3 is a service port scanner implementation project.
+Semi_project3 is a production-grade security scanning platform designed to replicate real-world penetration testing and SOC (Security Operations Center) workflows.
 
-The main purpose of this project is to scan a target host, detect open ports, identify the services running on those ports, and help the user understand the security meaning of the results.
+This system integrates multiple security tools into a unified pipeline:
 
-The project uses:
+* nmap for network reconnaissance
+* Nuclei for vulnerability detection
+* FastAPI for backend orchestration and API handling
 
-- Nmap for port scanning and service detection
-- Nuclei for template-based security checks
-- FastAPI for the web dashboard
-- SQLite for local scan result storage
-- Playwright / Chromium for screenshot evidence
-- Docker for stable execution
+Unlike basic scanners, this project focuses on **end-to-end automation**, from initial discovery to risk-based decision making.
 
-This project can be introduced as:
+---
 
-    "A service port scanner that expands open-port results into service analysis, risk scoring, evidence collection, and remediation guidance."
+## Problem Statement
 
+Traditional port scanners only provide:
 
-2. Why This Project Fits the Assignment
----------------------------------------
+* Open ports
+* Basic service info
 
-The assignment topic is a service port scanner.
+They do NOT provide:
 
-A basic service port scanner should provide:
+* Vulnerability context
+* Risk prioritization
+* Actionable intelligence
 
-1. Target input
-2. Open port detection
-3. Service identification
-4. Result output
+This project solves that by:
 
-Semi_project3 provides all of these.
+* Linking ports → services → vulnerabilities → risk score
 
-In addition, it includes:
+---
 
-- Service version detection
-- Risk scoring
-- Nuclei finding integration
-- Port-specific remediation guide
-- Screenshot evidence
-- Markdown report
-- Dashboard view
-- Docker execution support
+## Full Workflow (Detailed)
 
-Therefore, this project satisfies the service port scanner requirement and adds practical security operation features.
+### 1. Target Input
 
+User submits:
 
-3. Main Features
-----------------
+* IP address
+* Domain
 
-Semi_project3 includes the following features.
+---
 
-Target Management:
+### 2. Network Scanning (Nmap)
 
-- Add scan target
-- View registered assets
-- Run manual scan
-- Track scan history
+Command used:
 
-Port Scanning:
+```
+nmap -sS -sV -T4 -Pn <target>
+```
 
-- Detect open TCP ports
-- Identify service name
-- Identify product name
-- Identify service version
-- Display CPE if available
+**Purpose**
 
-Security Analysis:
+* Identify open ports
+* Detect running services
+* Extract service versions
 
-- Run Nuclei templates
-- Collect security findings
-- Group findings by severity
-- Generate recommendations
-- Calculate risk score
+**Output**
 
-Evidence:
+* XML format
 
-- Web screenshot capture
-- HTML fallback evidence when screenshot capture is unavailable
-- Evidence link on scan result page
+---
 
-Remediation:
+### 3. Parsing Layer
 
-- Port detail page
-- Linux hardening guide
-- Windows hardening guide
-- Verification commands
-- Recommended response by service type
+* Converts XML → structured JSON
+* Extracts:
 
-Dashboard:
+  * port
+  * protocol
+  * service name
+  * version
 
-- Scan result summary
-- Open port table
-- Technology detection table
-- Finding table
-- Severity summary
-- Live server clock
-- Report download
+---
 
+### 4. Vulnerability Scanning (Nuclei)
 
-4. Execution Methods
---------------------
+Command:
 
-There are two execution methods.
+```
+nuclei -u <target> -t /templates -severity medium,high,critical
+```
 
-Method 1: Docker execution
+**What it does**
 
-Recommended for:
+* Matches known vulnerability templates
+* Identifies CVEs
 
-- Presentation
-- Stable screenshot capture
-- Environment consistency
-- Avoiding Windows Playwright issues
+---
 
-Run:
+### 5. Data Enrichment (CVE)
 
-    run_docker.bat
+* External API calls
+* Adds:
 
-Open:
+  * CVE ID
+  * CVSS score
+  * severity level
+  * description
 
-    http://127.0.0.1:8000
+---
 
+### 6. Risk Scoring Engine
 
-Method 2: Windows local execution
+Risk Score =
+(Port Weight) + (Exposure Level) + (CVSS Score)
 
-Recommended for:
+#### Components
 
-- Simple local testing
-- Fast code debugging
-- Environments where Docker is unavailable
+**Port Weight**
 
-Run:
+* 22 (SSH): medium risk
+* 445 (SMB): high risk
+* 3389 (RDP): high risk
 
-    run.bat
+**Exposure**
 
-Open:
+* Public service → higher score
 
-    http://127.0.0.1:8000
+**CVSS**
 
+* Directly contributes major portion
 
-5. Target Input Rules
----------------------
+---
 
-Semi_project3 expects a host or IP address.
+### Example Calculation
 
-Correct examples:
+* Port 22 open → +15
+* CVSS 8.5 → +50
+* Public exposure → +10
 
-    scanme.nmap.org
-    testphp.vulnweb.com
-    demo.testfire.net
-    127.0.0.1
-    host.docker.internal
-    192.168.0.10
+Final Score = 75 → High Risk
 
-Incorrect examples:
+---
 
-    http://scanme.nmap.org
-    https://example.com
-    127.0.0.1:8000
-    scanme.nmap.org:80
-    example.com/login
+## System Architecture
 
-Do not include:
+User
+↓
+Nmap Scanner
+↓
+Parser
+↓
+Nuclei Scanner
+↓
+CVE Enrichment
+↓
+Risk Engine
+↓
+Report Generator
+↓
+Web UI
 
-- URL scheme such as http:// or https://
-- Port number such as :8000
-- Path such as /admin or /login
+---
 
-Reason:
+## Project Structure (Detailed)
 
-The scanner handles the target as a host. If a URL or host:port value is entered, name resolution may fail.
+```
+app/
+ ├── main.py              # FastAPI entry point
+ ├── scanner.py           # Controls scan flow
+ ├── nmap_runner.py       # Executes Nmap
+ ├── nuclei_runner.py     # Executes Nuclei
+ ├── risk.py              # Risk scoring logic
+ ├── report.py            # Report generator
+ ├── scheduler.py         # Periodic scanning
+ ├── worker.py            # Background tasks
+ ├── cve_api.py           # CVE data fetching
+ ├── web_enrichment.py    # Additional intelligence
+ ├── templates/           # HTML UI
+ └── static/              # CSS/JS
+```
 
-Common error:
+---
 
-    failed: [Errno -2] Name or service not known
+## Data Flow (Technical)
 
-Fix:
+1. Nmap generates XML
+2. Parser converts to JSON
+3. Nuclei results merged
+4. CVE API enriches vulnerabilities
+5. Risk engine computes score
+6. Report module outputs final result
 
-    Use 127.0.0.1 instead of 127.0.0.1:8000.
+---
 
+## API Design
 
-6. Recommended Test Targets
----------------------------
+### POST /scan
 
-Use only authorized systems.
+* Starts scan
+* Input: target
+* Output: scan_id
 
-Safe public test targets:
+### GET /report/{id}
 
-    scanme.nmap.org
-    testphp.vulnweb.com
-    demo.testfire.net
-    neverssl.com
-    badssl.com
+* Returns:
 
-Local vulnerable labs:
+  * ports
+  * services
+  * vulnerabilities
+  * risk score
 
-    DVWA
-    OWASP Juice Shop
-    Metasploitable2
-    Metasploitable3
+---
 
-Recommended presentation targets:
+## Key Design Decisions
 
-    scanme.nmap.org
-        Good for Nmap and service port scanning demonstration.
+* XML → JSON conversion for flexibility
+* Modular runners (nmap / nuclei separated)
+* Risk scoring abstraction
+* Async worker support for scalability
 
-    testphp.vulnweb.com
-        Good for web finding demonstration.
+---
 
-    Local DVWA or Juice Shop
-        Good for controlled vulnerable web application demonstration.
+## Limitations
 
+* Dependent on Nmap/Nuclei accuracy
+* No distributed scanning yet
+* Limited real-time alerting
 
-7. How to Read the Result
--------------------------
+---
 
-Example result:
+## Future Improvements
 
-    22/tcp open ssh OpenSSH 6.6.1
-    80/tcp open http Apache httpd 2.4.7
+* Distributed scanning cluster
+* Real-time alerts (Telegram / Discord)
+* Threat intelligence integration
+* Dashboard analytics
+* Historical scan comparison
 
-Interpretation:
+---
 
-    22/tcp
-        TCP port 22 is open.
-        SSH service is running.
-        Remote administration may be possible.
+## Documentation
 
-    80/tcp
-        TCP port 80 is open.
-        HTTP web service is running.
-        Apache web server was detected.
+* Execution Guide → [README_DOCKER.md](./README_DOCKER.md)
+* Internal Pipeline → [README_OPERATIONS.md](./README_OPERATIONS.md)
 
-Fields:
+---
 
-    Port
-        Network port number.
-
-    Service
-        Service name detected by Nmap.
-
-    Product
-        Software product name.
-
-    Version
-        Detected version.
-
-    CPE
-        Common Platform Enumeration string used for vulnerability mapping.
-
-    Source
-        Tool or module that produced the data.
-
-
-8. Risk Score
--------------
-
-The risk score summarizes the exposure level.
-
-Example range:
-
-    0 - 19      Very Low
-    20 - 39     Low
-    40 - 69     Medium
-    70 - 89     High
-    90 - 100    Critical
-
-Risk score can increase when:
-
-- More ports are open
-- Management ports are exposed
-- Database ports are exposed
-- Nuclei findings exist
-- Medium or high severity findings exist
-- Known CVE-related findings are detected
-- Weak security configuration is found
-
-Risk score can stay low when:
-
-- Only common web ports are open
-- Findings are informational
-- The host is an intentionally exposed test server
-- No strong vulnerability is detected
-
-
-9. Port Detail Page
--------------------
-
-Each detected port is clickable.
-
-Example:
-
-    22/tcp -> /ports/22
-    80/tcp -> /ports/80
-
-The port detail page provides:
-
-- Service description
-- Risk explanation
-- Linux remediation commands
-- Windows remediation steps
-- Hardening checklist
-- Verification commands
-- Recent assets where the port was found
-- Related CVE information if available
-
-This feature is important because it turns the scanner into an actionable tool.
-
-
-10. Reports
------------
-
-Semi_project3 supports Markdown report download.
-
-The report can include:
-
-- Target
-- Scan status
-- Risk score
-- Open ports
-- Services
-- Findings
-- Recommendations
-- Changes
-- Evidence references
-
-PDF output is not required in this version.
-
-
-11. Common Problems
--------------------
-
-Problem:
-
-    Target scan fails with name resolution error.
-
-Cause:
-
-    Target format is wrong.
-
-Fix:
-
-    Enter host only.
-
-Problem:
-
-    Screenshot is not generated.
-
-Cause:
-
-    Playwright or Chromium capture failed.
-
-Fix:
-
-    Use Docker or rely on HTML fallback evidence.
-
-Problem:
-
-    Nmap not recognized.
-
-Cause:
-
-    Nmap is not installed or PATH is missing.
-
-Fix:
-
-    Use Docker or install Nmap on Windows.
-
-Problem:
-
-    Nuclei not recognized.
-
-Cause:
-
-    Nuclei is not installed or PATH is missing.
-
-Fix:
-
-    Use Docker or install Nuclei on Windows.
-
-
-12. Legal Notice
-----------------
+## Best Practice
 
 Only scan systems you own or have explicit permission to test.
-
-Do not scan random public systems.
-
-Recommended safe environments:
-
-- Localhost
-- Docker labs
-- Official test targets
-- Training systems
-- Assigned lab infrastructure

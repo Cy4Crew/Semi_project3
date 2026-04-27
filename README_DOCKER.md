@@ -1,334 +1,124 @@
-Semi_project3 README_DOCKER
-===========================
+# README_DOCKER
 
-1. Purpose
-----------
+## Purpose
 
-This document explains how to run Semi_project3 with Docker.
+This document explains not only how to run the system with Docker, but
+also why Docker is used and how the containerized execution works
+internally.
 
-Docker is the recommended execution method because it provides a stable and reproducible environment.
+------------------------------------------------------------------------
 
-The Docker version includes:
+## Why Docker
 
-- Python runtime
-- FastAPI
-- Uvicorn
-- Nmap
-- Nuclei
-- Playwright
-- Chromium
-- SQLite support
+The system depends on: - Nmap (requires system-level installation) -
+Nuclei (requires templates and binary) - Python runtime (FastAPI)
 
+Running this directly on a host machine introduces: - dependency
+conflicts - inconsistent environments - OS-specific issues
 
-2. Why Docker Is Recommended
-----------------------------
+Docker solves this by: - isolating dependencies - ensuring
+reproducibility - providing identical runtime across systems
 
-Windows local execution can work, but security tools often depend on system-level binaries.
+------------------------------------------------------------------------
 
-Common Windows issues:
+## Architecture (Container Level)
 
-- Nmap PATH issue
-- Nuclei PATH issue
-- Playwright subprocess issue
-- Python version mismatch
-- SQLite file path inconsistency
+Host Machine\
+→ Docker Engine\
+→ Container\
+├── Python (FastAPI server)\
+├── Nmap binary\
+├── Nuclei binary\
+└── Templates
 
-Docker reduces these problems by fixing the runtime environment.
+All scans execute **inside the container**, not on the host.
 
+------------------------------------------------------------------------
 
-3. Requirements
----------------
+## Build Process
 
-Install:
+docker compose up --build
 
-- Docker Desktop
-- Docker Compose v2
+### Internals
 
-Check installation:
+1.  Dockerfile builds base image (python)
+2.  Installs:
+    -   nmap
+    -   nuclei
+    -   python dependencies
+3.  Copies project files
+4.  Starts FastAPI via uvicorn
 
-    docker --version
+------------------------------------------------------------------------
 
-    docker compose version
+## Runtime Flow
 
+1.  User accesses API
+2.  FastAPI receives request
+3.  Scanner module triggers subprocess
+4.  Nmap/Nuclei run inside container
+5.  Output processed and returned
 
-4. Start with Script
---------------------
+------------------------------------------------------------------------
 
-Run:
+## Access
 
-    run_docker.bat
+http://localhost:8000
 
-This script should:
+------------------------------------------------------------------------
 
-1. Build the Docker image
-2. Start the container
-3. Open or display the dashboard URL
+## Environment Variables
 
-Dashboard:
+.env example:
 
-    http://127.0.0.1:8000
+API_PORT=8000\
+SCAN_TIMEOUT=60\
+MAX_THREADS=10\
+NUCLEI_TEMPLATE_PATH=/templates
 
+------------------------------------------------------------------------
 
-5. Start Manually
------------------
+## Logs
 
-From the project folder:
+docker logs -f `<container_name>`{=html}
 
-    docker compose build
+------------------------------------------------------------------------
 
-    docker compose up -d
+## Debugging Inside Container
 
-Open:
+docker exec -it `<container_name>`{=html} bash
 
-    http://127.0.0.1:8000
+Check tools:
 
+nmap --version\
+nuclei -version
 
-6. Stop
--------
+------------------------------------------------------------------------
 
-Using script:
+## Common Issues
 
-    stop_docker.bat
+### Port Conflict
 
-Manual:
+netstat -ano \| findstr :8000\
+taskkill /PID `<pid>`{=html} /F
 
-    docker compose down
+------------------------------------------------------------------------
 
+### Container Not Updating
 
-7. View Logs
-------------
+docker compose down -v\
+docker compose up --build
 
-Using script:
+------------------------------------------------------------------------
 
-    logs_docker.bat
+### Nuclei Template Missing
 
-Manual:
+Ensure template path exists: /root/nuclei-templates
 
-    docker compose logs -f asm-lite
+------------------------------------------------------------------------
 
+## Best Practice
 
-8. Rebuild
-----------
-
-If files are changed:
-
-    docker compose build --no-cache
-
-    docker compose up -d
-
-If only restarting:
-
-    docker compose restart
-
-
-9. Port Mapping
----------------
-
-Default:
-
-    Host port:      8000
-    Container port: 8000
-
-Browser URL:
-
-    http://127.0.0.1:8000
-
-If port 8000 is already in use, change docker-compose.yml:
-
-    ports:
-      - "8088:8000"
-
-Then open:
-
-    http://127.0.0.1:8088
-
-
-10. Scanning Local Host Services from Docker
---------------------------------------------
-
-Inside Docker, 127.0.0.1 means the container itself.
-
-If you want to scan a service running on the Windows host, use:
-
-    host.docker.internal
-
-Do not include a port.
-
-Correct:
-
-    host.docker.internal
-
-Wrong:
-
-    host.docker.internal:8080
-
-
-11. Screenshot Capture
-----------------------
-
-Docker is better for screenshot capture because Chromium runs in a Linux container.
-
-Docker environment should use:
-
-    ASM_ENABLE_SCREENSHOT=1
-
-If screenshot capture fails, Semi_project3 creates HTML fallback evidence.
-
-Possible evidence outputs:
-
-    PNG screenshot
-    HTML evidence fallback
-
-
-12. Environment Variables
--------------------------
-
-Optional .env file:
-
-    NVD_API_KEY=
-    DISCORD_WEBHOOK_URL=
-    TELEGRAM_BOT_TOKEN=
-    TELEGRAM_CHAT_ID=
-
-Explanation:
-
-    NVD_API_KEY
-        Used for optional CVE lookup.
-
-    DISCORD_WEBHOOK_URL
-        Used for optional Discord alert.
-
-    TELEGRAM_BOT_TOKEN
-        Used for optional Telegram alert.
-
-    TELEGRAM_CHAT_ID
-        Telegram target chat ID.
-
-
-13. Data Persistence
---------------------
-
-Docker Compose can persist:
-
-- SQLite database
-- Reports
-- Screenshots
-
-Typical paths:
-
-    /data/asm_lite.db
-    /app/reports
-    /app/app/static/screenshots
-
-If you remove the volume, scan history may be deleted.
-
-
-14. Clean Reset
----------------
-
-To remove containers:
-
-    docker compose down
-
-To remove containers and volumes:
-
-    docker compose down -v
-
-Use volume deletion only if you want a clean database.
-
-
-15. Useful Docker Commands
---------------------------
-
-Show containers:
-
-    docker ps
-
-Enter container:
-
-    docker compose exec asm-lite bash
-
-Check Nmap:
-
-    docker compose exec asm-lite nmap --version
-
-Check Nuclei:
-
-    docker compose exec asm-lite nuclei -version
-
-Check Python:
-
-    docker compose exec asm-lite python --version
-
-View logs:
-
-    docker compose logs -f asm-lite
-
-
-16. Recommended Demo Procedure
-------------------------------
-
-Before presentation:
-
-1. Start Docker Desktop
-2. Run run_docker.bat
-3. Open dashboard
-4. Add scanme.nmap.org
-5. Run scan once before demo
-6. Confirm screenshot/evidence is visible
-7. Confirm port detail pages open
-
-During presentation:
-
-1. Explain target input
-2. Run scan
-3. Show open ports
-4. Show service/version detection
-5. Show recommendations
-6. Click port detail
-7. Show report
-
-
-17. Troubleshooting
--------------------
-
-Problem:
-
-    Dashboard does not open.
-
-Check:
-
-    docker ps
-    docker compose logs -f asm-lite
-
-Problem:
-
-    Port already in use.
-
-Fix:
-
-    Change host port mapping.
-
-Problem:
-
-    Screenshot missing.
-
-Fix:
-
-    Check logs. HTML fallback evidence is acceptable.
-
-Problem:
-
-    Nuclei templates outdated.
-
-Fix:
-
-    Rebuild or run update command inside container if configured.
-
-Problem:
-
-    Target does not resolve.
-
-Fix:
-
-    Enter hostname only. Do not include http:// or port number.
+-   Always rebuild after dependency changes
+-   Do not install tools on host manually
+-   Keep container environment immutable
