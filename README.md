@@ -7,7 +7,6 @@ Semi_project3 README
 - [Docker](README_DOCKER.md)
 - [Operations](README_OPERATIONS.md)
 
--------------------
 1. Project Overview
 -------------------
 
