@@ -14,6 +14,39 @@ Unlike basic scanners, this project focuses on **end-to-end automation**, from i
 
 ---
 
+## Required Software
+
+- Docker (latest)  
+  https://www.docker.com/products/docker-desktop/
+
+- Docker Compose v2+  
+  (included in Docker Desktop)
+
+- Python 3.12  
+  https://www.python.org/downloads/release/python-3120/
+
+- nmap (latest)  
+  https://nmap.org/download.html
+
+- Nuclei (latest)  
+  https://github.com/projectdiscovery/nuclei/releases
+
+---
+
+## Installation Check
+
+Verify installation:
+
+```bash
+docker --version
+docker compose version
+python --version
+nmap --version
+nuclei -version
+```
+
+---
+
 ## Problem Statement
 
 Traditional port scanners only provide:
