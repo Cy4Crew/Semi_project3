@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block page_title %}Scan Result #{{ scan.id }}{% endblock %}
+{% block content %}
+
+{% set g = grade(scan.risk_score) %}
+
+<section class="result-hero">
+  <div>
+    <p class="eyebrow">Scan Target</p>
+    <h3><code>{{ scan.value }}</code></h3>
+    <p class="muted">Status: <b class="status-text status-{{ scan.status }}">{{ scan.status }}</b> · {{ scan.summary }}</p>
+    {% if scan.status == "partial_success" %}
+      <p class="muted">Scan completed. Optional evidence capture was skipped or failed, but core port and finding data was saved.</p>
+    {% endif %}
+    {% if job %}<p class="muted">Job #{{ job.id }} · {{ job.job_type }} · {{ job.status }} · {{ job.message }}</p>{% endif %}
+  </div>
+  <div class="risk-box">
+    <span>Risk Score</span>
+    <strong>{{ scan.risk_score }}</strong>
+    <em>{{ g }}</em>
+  </div>
+</section>
+
+<section class="quick-actions">
+  <a class="button" href="/">Back to Dashboard</a>
+  <a class="button secondary" href="/reports/{{ scan.id }}">Download Markdown Report</a>
+</section>
+
+<section class="grid-three">
+  <div class="mini-card"><span>Open Ports</span><strong>{{ ports|length }}</strong></div>
+  <div class="mini-card"><span>Findings</span><strong>{{ findings|length }}</strong></div>
+  <div class="mini-card"><span>Changes</span><strong>{{ changes|length }}</strong></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><div><p class="eyebrow">Search & Filter</p><h3>상세 결과 필터</h3></div></div>
+  <form method="get" action="/scans/{{ scan.id }}" class="filter-form">
+    <input name="port" value="{{ filters.port }}" placeholder="port search, e.g. 80">
+    <select name="severity">
+      <option value="">All Severity</option>
+      <option value="critical" {% if filters.severity == "critical" %}selected{% endif %}>critical</option>
+      <option value="high" {% if filters.severity == "high" %}selected{% endif %}>high</option>
+      <option value="medium" {% if filters.severity == "medium" %}selected{% endif %}>medium</option>
+      <option value="low" {% if filters.severity == "low" %}selected{% endif %}>low</option>
+      <option value="info" {% if filters.severity == "info" %}selected{% endif %}>info</option>
+    </select>
+    <button type="submit">Apply</button>
+    <a class="button secondary" href="/scans/{{ scan.id }}">Reset</a>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><div><p class="eyebrow">Nmap Output</p><h3>Open Ports & Services</h3></div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>CPE</th><th>Source</th></tr></thead>
+      <tbody>
+      {% for p in ports %}
+        <tr>
+          <td><a class="port-pill port-link" href="/ports/{{ p.port }}">{{ p.port }}/{{ p.protocol }}</a></td>
+          <td>{{ p.service or "-" }}</td>
+          <td>{{ p.product or "-" }}</td>
+          <td>{{ p.version or "-" }}</td>
+          <td><code>{{ p.cpe or "-" }}</code></td>
+          <td>{{ p.source }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="grid-two">
+  <section class="panel">
+    <div class="panel-head"><div><p class="eyebrow">HTTP Probe</p><h3>Technology Detection</h3></div></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>URL</th><th>Technology</th><th>Evidence</th></tr></thead>
+        <tbody>
+        {% for t in tech_rows %}
+          <tr><td><code>{{ t.url }}</code></td><td>{{ t.technology }}</td><td>{{ t.evidence }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><div><p class="eyebrow">Evidence</p><h3>Web Screenshots</h3></div></div>
+    <div class="screenshot-grid">
+      {% for s in screenshots %}
+        <div class="shot-card">
+          <p><code>{{ s.url }}</code></p>
+          {% if s.path and s.path.endswith(".png") %}
+            <a href="{{ s.path }}" target="_blank"><img src="{{ s.path }}" alt="{{ s.url }}"></a>
+          {% elif s.path %}
+            <a class="evidence-link" href="{{ s.path }}" target="_blank">{{ s.status }} evidence</a>
+            <div class="shot-placeholder">{{ s.error }}</div>
+          {% else %}
+            <div class="shot-placeholder">{{ s.status }}: {{ s.error }}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+</section>
+
+<section class="grid-two">
+  <section class="panel">
+    <div class="panel-head"><div><p class="eyebrow">Diff</p><h3>Changes</h3></div></div>
+    <ul class="change-list">
+    {% for c in changes %}
+      <li><span class="badge badge-info">{{ c.change_type }}</span><p>{{ c.detail }}</p></li>
+    {% endfor %}
+    </ul>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><div><p class="eyebrow">Remediation</p><h3>Recommendations</h3></div></div>
+    <div class="recommendation-list">
+      {% for r in recommendations %}
+        <div class="recommendation-card">
+          <span class="severity severity-{{ r.severity|lower }}">{{ r.severity }}</span>
+          <h4>{{ r.title }}</h4>
+          <p>{{ r.recommendation }}</p>
+          <small>{{ r.source }}</small>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+</section>
+
+
+<section class="panel">
+  <div class="panel-head"><div><p class="eyebrow">Finding Triage</p><h3>Severity Summary</h3></div></div>
+  <div class="severity-filter-row">
+    <a class="severity-chip" href="/scans/{{ scan.id }}">All</a>
+    {% for row in severity_counts %}
+      <a class="severity-chip severity-{{ row.sev }}" href="/scans/{{ scan.id }}?severity={{ row.sev }}">
+        {{ row.sev }} · {{ row.c }}
+      </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><div><p class="eyebrow">Nuclei Output</p><h3>Findings</h3></div></div>
+  <button class="button secondary" type="button" onclick="toggleInfoFindings()">Toggle Info Findings</button>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Severity</th><th>Template</th><th>Name</th><th>Target</th></tr></thead>
+      <tbody>
+      {% for f in findings %}
+        <tr class="finding-row finding-{{ f.severity|lower }}">
+          <td><span class="severity severity-{{ f.severity|lower }}">{{ f.severity }}</span></td>
+          <td><code>{{ f.template_id }}</code></td>
+          <td>{{ f.name }}</td>
+          <td>{{ f.target }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}
+
+<script>
+function toggleInfoFindings() {
+  document.querySelectorAll(".finding-info").forEach(function(row) {
+    row.classList.toggle("hidden-finding");
+  });
+}
+</script>

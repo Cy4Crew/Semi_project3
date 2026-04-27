@@ -1,0 +1,23 @@
+services:
+  asm-lite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: asm-lite
+    ports:
+      - "8000:8000"
+    environment:
+      ASM_ENABLE_SCREENSHOT: "1"
+      DATABASE_PATH: "/data/asm_lite.db"
+      NVD_API_KEY: "${NVD_API_KEY:-}"
+      DISCORD_WEBHOOK_URL: "${DISCORD_WEBHOOK_URL:-}"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
+    volumes:
+      - asm_lite_data:/data
+      - ./reports:/app/reports
+      - ./app/static/screenshots:/app/app/static/screenshots
+    restart: unless-stopped
+
+volumes:
+  asm_lite_data:

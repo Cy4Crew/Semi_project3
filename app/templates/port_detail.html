@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block page_title %}Port {{ port }} Remediation Guide
+<section class="grid-three">
+<section class="mini-card"><span>Operational Priority</span><strong>{% if guide.risk_level in ['Critical','High'] %}Immediate{% else %}Planned{% endif %}</strong></section>
+<section class="mini-card"><span>Public Exposure</span><strong>Review</strong></section>
+<section class="mini-card"><span>Runbook Level</span><strong>Detailed</strong></section>
+</section>
+{% endblock %}
+{% block content %}
+
+<section class="result-hero">
+  <div>
+    <p class="eyebrow">Port Guide</p>
+    <h3><code>{{ port }}/tcp</code> - {{ guide.service }}</h3>
+    <p class="muted">{{ guide.summary }}</p>
+  </div>
+  <div class="risk-box">
+    <span>Risk Level</span>
+    <strong>{{ guide.risk_level }}</strong>
+    <em>Guide</em>
+  </div>
+</section>
+
+<section class="quick-actions">
+  <a class="button" href="/">Back to Dashboard</a>
+  <a class="button secondary" href="javascript:history.back()">Back to Scan</a>
+</section>
+
+<section class="grid-two">
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Overview</p>
+        <h3>{{ guide.title }}</h3>
+      </div>
+    </div>
+    <p class="guide-summary">{{ guide.summary }}</p>
+
+    <h4>Risk Factors</h4>
+    <ul class="guide-list">
+      {% for item in guide.risks %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Verification</p>
+        <h3>How to Verify</h3>
+      </div>
+    </div>
+    <ul class="guide-list">
+      {% for item in guide.verify %}
+      <li><code>{{ item }}</code></li>
+      {% endfor %}
+    </ul>
+  </section>
+</section>
+
+<section class="grid-two">
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Linux</p>
+        <h3>Linux Fix Guide</h3>
+      </div>
+    </div>
+    <ul class="guide-list command-list">
+      {% for cmd in guide.linux_fix %}
+      <li><code>{{ cmd }}</code></li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Windows</p>
+        <h3>Windows Fix Guide</h3>
+      </div>
+    </div>
+    <ul class="guide-list">
+      {% for item in guide.windows_fix %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+</section>
+
+
+<section class="grid-two">
+<section class="panel">
+<div class="panel-head"><div><p class="eyebrow">Decision</p><h3>Exposure Decision</h3></div></div>
+<p><span class="severity severity-{{ decision.level|lower }}">{{ decision.level }}</span></p>
+<p class="guide-summary">{{ decision.message }}</p>
+</section>
+
+<section class="panel">
+<div class="panel-head"><div><p class="eyebrow">Threat Intel</p><h3>Related CVEs</h3></div></div>
+{% if cves %}
+<ul class="guide-list">
+{% for c in cves %}
+<li><b>{{ c.cve }}</b> - {{ c.title }} (<span class="severity severity-{{ c.severity }}">{{ c.severity }}</span>)<br>{{ c.fix }}</li>
+{% endfor %}
+</ul>
+{% else %}
+<p class="guide-summary">No mapped CVEs from detected products in recent scan history.</p>
+{% endif %}
+</section>
+</section>
+
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Live Intelligence</p>
+      <h3>Online CVE Lookup</h3>
+    </div>
+  </div>
+  {% if online_cves %}
+  <ul class="guide-list">
+    {% for c in online_cves %}
+    <li><b>{{ c.cve }}</b> - {{ c.title }} {% if c.score %}(CVSS {{ c.score }}){% endif %}<br>{{ c.fix }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="guide-summary">No online CVE result was returned. Offline mapping is still shown when available.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Hardening</p>
+      <h3>Recommended Hardening</h3>
+    </div>
+  </div>
+  <ul class="guide-list hardening-list">
+    {% for item in guide.hardening %}
+    <li>{{ item }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">History</p>
+      <h3>Recent Assets With Port {{ port }}</h3>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Scan</th>
+          <th>Target</th>
+          <th>Status</th>
+          <th>Risk</th>
+          <th>Service</th>
+          <th>Product</th>
+          <th>Version</th>
+          <th>Started</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in recent %}
+        {% set g = grade(row.risk_score) %}
+        <tr>
+          <td><a href="/scans/{{ row.scan_id }}">#{{ row.scan_id }}</a></td>
+          <td><code>{{ row.value }}</code></td>
+          <td><span class="badge status-{{ row.status }}">{{ row.status }}</span></td>
+          <td><span class="risk risk-{{ g|lower }}">{{ row.risk_score }} / {{ g }}</span></td>
+          <td>{{ row.service or "-" }}</td>
+          <td>{{ row.product or "-" }}</td>
+          <td>{{ row.version or "-" }}</td>
+          <td>{{ row.started_at }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+
+<section class="grid-three">
+<section class="mini-card"><span>Operational Priority</span><strong>{% if guide.risk_level in ['Critical','High'] %}Immediate{% else %}Planned{% endif %}</strong></section>
+<section class="mini-card"><span>Public Exposure</span><strong>Review</strong></section>
+<section class="mini-card"><span>Runbook Level</span><strong>Detailed</strong></section>
+</section>
+{% endblock %}

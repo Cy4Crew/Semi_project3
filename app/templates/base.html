@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ASM-Lite</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">A</div>
+      <div>
+        <h1>ASM-Lite</h1>
+        <p>Attack Surface Monitor</p>
+      </div>
+    </div>
+    <nav>
+      <a href="/" class="nav-link active">Dashboard</a>
+      <a href="#assets" class="nav-link">Assets</a>
+      <a href="#scans" class="nav-link">Scans</a>
+      <a href="#reports" class="nav-link">Reports</a>
+    </nav>
+    <div class="sidebar-note">
+      <b>Mode</b>
+      <span>Authorized Security Assessment</span>
+    </div>
+  </aside>
+
+  <div class="content">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Nmap + Nuclei</p>
+        <h2>{% block page_title %}External Attack Surface Dashboard{% endblock %}</h2>
+      </div>
+      <div class="topbar-actions">
+        <span class="status-dot"></span>
+        <span>Local Console</span>
+      </div>
+    </header>
+
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+</body>
+</html>
