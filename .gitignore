@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual env
+venv/
+.env/
+.env
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+*.env
+docker-data/
+
+# Database
+*.db
+*.sqlite3
+
+# Playwright
+playwright-report/
+test-results/
+
+# 기타
+*.bak
+*.tmp
