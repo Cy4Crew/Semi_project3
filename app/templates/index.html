@@ -139,7 +139,18 @@
             <td><code>{{ t.value }}</code></td>
             <td>{{ t.label or "-" }}</td>
             <td><span class="badge badge-neutral">C{{ t.criticality }}</span></td>
-            <td><form method="post" action="/scan/{{ t.id }}"><button type="submit" class="small">Scan</button></form></td>
+            <td>
+              <form method="post" action="/scan/{{ t.id }}" class="scan-inline-form">
+                <select name="scan_mode" title="스캔 프로파일 선택">
+                  <option value="quick">⚡ Quick (35포트)</option>
+                  <option value="standard" selected>🔍 Standard (~130포트)</option>
+                  <option value="extended">📡 Extended (1-10000)</option>
+                  <option value="full">🌐 Full (1-65535)</option>
+                </select>
+                <input name="custom_ports" placeholder="직접입력: 80,443,8000-8100" style="width:180px" title="비워두면 위 프로파일 사용">
+                <button type="submit" class="small">Scan</button>
+              </form>
+            </td>
           </tr>
         {% endfor %}
         </tbody>

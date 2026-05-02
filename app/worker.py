@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime
 
 from app.database import get_conn, safe_execute
-from app.scanner import tcp_scan
+from app.scanner import tcp_scan, DEFAULT_PORTS
 from app.nmap_runner import run_nmap
 from app.nuclei_runner import run_nuclei
 from app.diff import detect_changes
@@ -34,7 +34,7 @@ def update_job_status(job_id: int, status: str, message: str, scan_id: int | Non
 
 
 
-async def run_scan_job(job_id: int) -> int:
+async def run_scan_job(job_id: int, ports: list[int] | None = None, port_spec: str = "quick") -> int:
     conn = get_conn()
     job = conn.execute(
         "SELECT scan_jobs.*, targets.value, targets.criticality FROM scan_jobs JOIN targets ON scan_jobs.target_id = targets.id WHERE scan_jobs.id = ?",
@@ -55,17 +55,20 @@ async def run_scan_job(job_id: int) -> int:
     )
     cur = conn.execute(
         "INSERT INTO scans(target_id, status, summary) VALUES (?, 'running', ?)",
-        (target_id, f"job_id={job_id}"),
+        (target_id, f"job_id={job_id} port_spec={port_spec}"),
     )
     scan_id = cur.lastrowid
     conn.execute("UPDATE scan_jobs SET scan_id = ? WHERE id = ?", (scan_id, job_id))
     conn.commit()
     conn.close()
 
-    try:
-        update_job_progress(job_id, 20, "tcp_scan", "running TCP scan")
+    # 포트 목록: 외부에서 주입된 것이 없으면 기본값 사용
+    scan_ports = ports if ports is not None else DEFAULT_PORTS
 
-        open_ports = await tcp_scan(target_value)
+    try:
+        update_job_progress(job_id, 20, "tcp_scan", f"running TCP scan ({len(scan_ports)} ports, spec={port_spec})")
+
+        open_ports = await tcp_scan(target_value, ports=scan_ports)
         update_job_progress(job_id, 40, "nmap", "running nmap service detection")
 
         nmap_rows = await asyncio.to_thread(run_nmap, target_value, open_ports, scan_id)

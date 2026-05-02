@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from app.database import init_db, get_conn
-from app.scanner import expand_target
+from app.scanner import expand_target, parse_port_input, SCAN_PROFILES, PROFILE_DESCRIPTIONS, DEFAULT_PORTS
 from app.worker import run_scan_job
 from app.scheduler import start_scheduler, get_scheduler_status
 from app.report import generate_report
@@ -102,6 +102,8 @@ def index(
             "grade": grade,
             "filters": {"q": q, "status": status, "risk": risk},
             "scheduler": get_scheduler_status(),
+            "scan_profiles": SCAN_PROFILES,
+            "profile_descriptions": PROFILE_DESCRIPTIONS,
         },
     )
 
@@ -135,13 +137,28 @@ async def upload_targets(file: UploadFile = File(...)):
 
 
 @app.post("/scan/{target_id}")
-async def scan_target(target_id: int):
+async def scan_target(
+    target_id: int,
+    scan_mode: str = Form("quick"),
+    custom_ports: str = Form(""),
+):
     conn = get_conn()
     target = conn.execute("SELECT * FROM targets WHERE id = ?", (target_id,)).fetchone()
     if not target:
         conn.close()
         raise HTTPException(404, "target not found")
 
+    # 포트 목록 결정
+    try:
+        if custom_ports.strip():
+            ports = parse_port_input(custom_ports)
+        else:
+            ports = parse_port_input(scan_mode)
+    except ValueError as exc:
+        conn.close()
+        raise HTTPException(400, f"포트 입력 오류: {exc}")
+
+    port_spec = custom_ports.strip() if custom_ports.strip() else scan_mode
     cur = conn.execute(
         "INSERT INTO scan_jobs(target_id, job_type, status, message) VALUES (?, 'manual', 'queued', 'created by user')",
         (target_id,),
@@ -150,7 +167,7 @@ async def scan_target(target_id: int):
     conn.commit()
     conn.close()
 
-    scan_id = await run_scan_job(int(job_id))
+    scan_id = await run_scan_job(int(job_id), ports=ports, port_spec=port_spec)
     return RedirectResponse(f"/scans/{scan_id}", status_code=303)
 
 
