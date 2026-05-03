@@ -148,7 +148,7 @@
                   <option value="full">🌐 Full (1-65535)</option>
                 </select>
                 <input name="custom_ports" placeholder="직접입력: 80,443,8000-8100" style="width:180px" title="비워두면 위 프로파일 사용">
-                <button type="submit" class="small">Scan</button>
+                <td><button class="small" onclick="scanTarget({{ t.id }})">Scan</button></td>
               </form>
             </td>
           </tr>
@@ -245,6 +245,23 @@
   refreshSchedulerStatus();
   setInterval(refreshSchedulerStatus, 1000);
 })();
+async function scanTarget(id) {
+  try {
+    const res = await fetch('/scan/' + id, { method: 'POST', redirect: 'follow' });
+    if (res.status === 429) {
+      const data = await res.json();
+      alert('⚠️ ' + data.detail);
+      return;
+    }
+    if (res.ok) {
+      window.location.href = res.url;
+      return;
+    }
+    alert('스캔 오류: ' + res.status);
+  } catch (e) {
+    alert('⚠️ 요청이 너무 많습니다. 잠시 후 다시 시도하세요.');
+  }
+}
 </script>
 
 {% endblock %}

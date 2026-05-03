@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Form, HTTPException, Request, UploadFile, File, Query
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile, File, Query, Depends
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 
@@ -14,7 +14,14 @@ from app.risk import grade
 from app.port_guides import get_port_guide
 from app.intelligence import map_cves, exposure_decision
 from app.cve_api import query_nvd
-
+from app.auth import (
+    init_auth_table, rate_limit,
+    verify_api_key, require_admin,
+    check_total_target_limit,
+    issue_api_key, revoke_api_key,
+    get_session, create_session, require_session,
+    require_admin_session, SESSION_COOKIE,
+)
 BASE_DIR = Path(__file__).resolve().parent.parent
 app = FastAPI(title="ASM-Lite", version="1.2.0")
 templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
@@ -24,6 +31,7 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), na
 @app.on_event("startup")
 def startup():
     init_db()
+    init_auth_table()
     start_scheduler()
 
 
@@ -34,6 +42,9 @@ def index(
     status: str = Query("", description="scan status"),
     risk: str = Query("", description="risk grade"),
 ):
+    user = get_session(request)
+    if not user:
+        return RedirectResponse("/admin")
     conn = get_conn()
 
     target_where = []
@@ -110,6 +121,7 @@ def index(
 
 @app.post("/targets")
 def create_target(value: str = Form(...), label: str = Form(""), criticality: int = Form(3)):
+    check_total_target_limit()
     conn = get_conn()
     for item in expand_target(value):
         conn.execute(
@@ -141,6 +153,7 @@ async def scan_target(
     target_id: int,
     scan_mode: str = Form("quick"),
     custom_ports: str = Form(""),
+    _=Depends(rate_limit("scan")),
 ):
     conn = get_conn()
     target = conn.execute("SELECT * FROM targets WHERE id = ?", (target_id,)).fetchone()
@@ -237,36 +250,6 @@ def report(scan_id: int):
     return FileResponse(path, media_type="text/markdown", filename=path.name)
 
 
-@app.get("/api/jobs")
-def api_jobs():
-    conn = get_conn()
-    jobs = conn.execute(
-        """
-        SELECT scan_jobs.*, targets.value
-        FROM scan_jobs JOIN targets ON scan_jobs.target_id = targets.id
-        ORDER BY scan_jobs.id DESC LIMIT 50
-        """
-    ).fetchall()
-    conn.close()
-    return [dict(j) for j in jobs]
-
-
-
-@app.get("/api/history")
-def api_history(limit: int = 20):
-    conn = get_conn()
-    rows = conn.execute(
-        """
-        SELECT scans.id, scans.started_at, scans.risk_score, scans.summary, targets.value
-        FROM scans JOIN targets ON scans.target_id = targets.id
-        WHERE scans.status = 'done'
-        ORDER BY scans.id DESC
-        LIMIT ?
-        """,
-        (limit,),
-    ).fetchall()
-    conn.close()
-    return list(reversed([dict(r) for r in rows]))
 
 
 @app.get("/ports/{port}", response_class=HTMLResponse)
@@ -333,3 +316,99 @@ def api_scheduler():
 
     return payload
 
+# ── API 보호 엔드포인트 ──────────────────────────────────
+@app.get("/api/jobs")
+def api_jobs(user=Depends(verify_api_key)):
+    conn = get_conn()
+    jobs = conn.execute(
+        """
+        SELECT scan_jobs.*, targets.value
+        FROM scan_jobs JOIN targets ON scan_jobs.target_id = targets.id
+        ORDER BY scan_jobs.id DESC LIMIT 50
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(j) for j in jobs]
+
+
+@app.get("/api/history")
+def api_history(limit: int = 20, user=Depends(verify_api_key)):
+    conn = get_conn()
+    rows = conn.execute(
+        """
+        SELECT scans.id, scans.started_at, scans.risk_score, scans.summary, targets.value
+        FROM scans JOIN targets ON scans.target_id = targets.id
+        WHERE scans.status = 'done'
+        ORDER BY scans.id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return list(reversed([dict(r) for r in rows]))
+
+
+# ── Admin 전용 API Key 관리 ──────────────────────────────
+@app.get("/api/keys")
+def list_keys(user=Depends(require_admin_session)):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, name, role, created_at, active FROM api_keys ORDER BY id DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/keys")
+def create_key(name: str = Form(...), role: str = Form("user"), user=Depends(require_admin_session)):
+    raw = issue_api_key(name, role)
+    return {"name": name, "role": role, "api_key": raw, "message": "안전한 곳에 보관하세요"}
+
+
+@app.delete("/api/keys/{key_id}")
+def delete_key(key_id: int, user=Depends(require_admin_session)):
+    revoke_api_key(key_id)
+    return {"message": f"Key {key_id} 비활성화 완료"}
+
+
+# ── Admin 페이지 ─────────────────────────────────────────
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request: Request):
+    return templates.TemplateResponse("admin.html", {"request": request})
+
+@app.post("/api/login")
+async def login(request: Request, api_key: str = Form(...)):
+    from app.auth import _lookup_key
+    user = _lookup_key(api_key)
+    if not user:
+        raise HTTPException(403, "유효하지 않은 Key입니다.")
+    if user["role"] == "admin":
+        resp = RedirectResponse("/admin/manage", status_code=303)
+    else:
+        resp = RedirectResponse("/", status_code=303)
+    create_session(resp, user)
+    return resp
+
+@app.get("/logout")
+def logout():
+    resp = RedirectResponse("/admin", status_code=303)
+    resp.delete_cookie(SESSION_COOKIE)
+    return resp
+
+@app.get("/admin/manage", response_class=HTMLResponse)
+def admin_manage(request: Request):
+    user = get_session(request)
+    if not user:
+        return RedirectResponse("/admin")
+    if user["role"] != "admin":
+        return RedirectResponse("/")
+    conn = get_conn()
+    keys = conn.execute(
+        "SELECT id, name, role, created_at, active FROM api_keys ORDER BY id DESC"
+    ).fetchall()
+    conn.close()
+    return templates.TemplateResponse("admin_manage.html", {
+        "request": request,
+        "user": user,
+        "keys": [dict(k) for k in keys],
+    })
