@@ -1,75 +1,46 @@
 {% extends "base.html" %}
-{% block page_title %}External Attack Surface Dashboard
-<script>
-(function () {
-  function pad(n) { return String(n).padStart(2, '0'); }
-
-  function formatLocalTime() {
-    const d = new Date();
-    return d.getFullYear() + '-' +
-      pad(d.getMonth() + 1) + '-' +
-      pad(d.getDate()) + ' ' +
-      pad(d.getHours()) + ':' +
-      pad(d.getMinutes()) + ':' +
-      pad(d.getSeconds());
-  }
-
-  function setClock(value) {
-    const el = document.getElementById('server-clock');
-    if (el) el.textContent = value || formatLocalTime();
-  }
-
-  async function refreshSchedulerStatus() {
-    setClock(formatLocalTime());
-
-    try {
-      const res = await fetch('/api/scheduler?t=' + Date.now(), { cache: 'no-store' });
-      if (!res.ok) return;
-
-      const data = await res.json();
-      if (data.server_time) setClock(data.server_time);
-
-      const nextRun = document.getElementById('next-run-time');
-      if (nextRun) {
-        const value = data.next_run || data.next_run_time || data.next_scan || data.next;
-        if (value) nextRun.textContent = value;
-      }
-    } catch (e) {
-      setClock(formatLocalTime());
-    }
-  }
-
-  refreshSchedulerStatus();
-  setInterval(refreshSchedulerStatus, 1000);
-})();
-</script>
-
-{% endblock %}
+{% block page_title %}External Attack Surface Dashboard{% endblock %}
 {% block content %}
 
 <section class="metric-grid">
-  <div class="metric-card"><span class="metric-label">Targets</span><strong>{{ stats.targets }}</strong><p>Registered assets</p></div>
-  <div class="metric-card"><span class="metric-label">Scans</span><strong>{{ stats.scans }}</strong><p>Total scan history</p></div>
-  <div class="metric-card"><span class="metric-label">Ports</span><strong>{{ stats.ports }}</strong><p>Open port records</p></div>
-  <div class="metric-card"><span class="metric-label">Findings</span><strong>{{ stats.findings }}</strong><p>Nuclei results</p></div>
+  <div class="metric-card"><span class="metric-label">Targets</span><strong>{{ stats.targets }}</strong>
+    <p>Registered assets</p>
+  </div>
+  <div class="metric-card"><span class="metric-label">Scans</span><strong>{{ stats.scans }}</strong>
+    <p>Total scan history</p>
+  </div>
+  <div class="metric-card"><span class="metric-label">Ports</span><strong>{{ stats.ports }}</strong>
+    <p>Open port records</p>
+  </div>
+  <div class="metric-card"><span class="metric-label">Findings</span><strong>{{ stats.findings }}</strong>
+    <p>Nuclei results</p>
+  </div>
 </section>
 
 <section class="panel">
   <div class="panel-head">
-    <div><p class="eyebrow">Automation</p><h3>Scheduled Scan Status</h3></div>
-    {% if scheduler.running %}<span class="badge badge-good">Scheduler Running</span>{% else %}<span class="badge badge-danger">Scheduler Stopped</span>{% endif %}
+    <div>
+      <p class="eyebrow">Automation</p>
+      <h3>Scheduled Scan Status</h3>
+    </div>
+    {% if scheduler.running %}<span class="badge badge-good">Scheduler Running</span>{% else %}<span
+      class="badge badge-danger">Scheduler Stopped</span>{% endif %}
   </div>
   <div class="status-grid">
     <div><b>{{ stats.queued }}</b><span>Queued Jobs</span></div>
     <div><b>{{ stats.running }}</b><span>Running Jobs</span></div>
     <div><b><span id="server-clock">{{ scheduler.server_time }}</span></b><span>Server Time</span></div>
-    <div><b>{% if scheduler.jobs and scheduler.jobs[0].next_run_time %}{{ scheduler.jobs[0].next_run_time }}{% else %}-{% endif %}</b><span>Next Daily Scan</span></div>
+    <div><b>{% if scheduler.jobs and scheduler.jobs[0].next_run_time %}{{ scheduler.jobs[0].next_run_time }}{% else
+        %}-{% endif %}</b><span>Next Daily Scan</span></div>
   </div>
 </section>
 
 <section class="panel hero-panel">
   <div class="panel-head">
-    <div><p class="eyebrow">Asset Inventory</p><h3>대상 등록</h3></div>
+    <div>
+      <p class="eyebrow">Asset Inventory</p>
+      <h3>대상 등록</h3>
+    </div>
     <span class="badge badge-info">Daily 09:00 Auto Scan</span>
   </div>
   <form method="post" action="/targets" class="asset-form">
@@ -91,22 +62,28 @@
 </section>
 
 <section class="panel">
-  <div class="panel-head"><div><p class="eyebrow">Search & Filter</p><h3>결과 필터</h3></div></div>
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Search & Filter</p>
+      <h3>결과 필터</h3>
+    </div>
+  </div>
   <form method="get" action="/" class="filter-form">
     <input name="q" value="{{ filters.q }}" placeholder="target or label search">
     <select name="status">
       <option value="">All Status</option>
-      <option value="done" {% if filters.status == "done" %}selected{% endif %}>done</option>
-      <option value="running" {% if filters.status == "running" %}selected{% endif %}>running</option>
-      <option value="partial_success" {% if filters.status == "partial_success" %}selected{% endif %}>partial_success</option>
-      <option value="failed" {% if filters.status == "failed" %}selected{% endif %}>failed</option>
+      <option value="done" {% if filters.status=="done" %}selected{% endif %}>done</option>
+      <option value="running" {% if filters.status=="running" %}selected{% endif %}>running</option>
+      <option value="partial_success" {% if filters.status=="partial_success" %}selected{% endif %}>partial_success
+      </option>
+      <option value="failed" {% if filters.status=="failed" %}selected{% endif %}>failed</option>
     </select>
     <select name="risk">
       <option value="">All Risk</option>
-      <option value="High" {% if filters.risk == "High" %}selected{% endif %}>High</option>
-      <option value="Medium" {% if filters.risk == "Medium" %}selected{% endif %}>Medium</option>
-      <option value="Low" {% if filters.risk == "Low" %}selected{% endif %}>Low</option>
-      <option value="Info" {% if filters.risk == "Info" %}selected{% endif %}>Info</option>
+      <option value="High" {% if filters.risk=="High" %}selected{% endif %}>High</option>
+      <option value="Medium" {% if filters.risk=="Medium" %}selected{% endif %}>Medium</option>
+      <option value="Low" {% if filters.risk=="Low" %}selected{% endif %}>Low</option>
+      <option value="Info" {% if filters.risk=="Info" %}selected{% endif %}>Info</option>
     </select>
     <button type="submit">Apply</button>
     <a class="button secondary" href="/">Reset</a>
@@ -114,31 +91,50 @@
 </section>
 
 <section class="panel">
-  <div class="panel-head"><div><p class="eyebrow">History</p><h3>Risk Trend</h3></div><span class="badge badge-info">Recent scans</span></div>
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">History</p>
+      <h3>Risk Trend</h3>
+    </div><span class="badge badge-info">Recent scans</span>
+  </div>
   <div class="chart-box">
     {% for s in scans[:12]|reverse %}
-      {% set g = grade(s.risk_score) %}
-      <div class="bar-wrap" title="#{{ s.id }} {{ s.value }} risk={{ s.risk_score }}">
-        <div class="bar bar-{{ g|lower }}" style="height: {{ [s.risk_score, 5]|max }}%;"></div>
-        <span>#{{ s.id }}</span>
-      </div>
+    {% set g = grade(s.risk_score) %}
+    <div class="bar-wrap" title="#{{ s.id }} {{ s.value }} risk={{ s.risk_score }}">
+      <div class="bar bar-{{ g|lower }}" style="height: {{ [s.risk_score, 5]|max }}%;"></div>
+      <span>#{{ s.id }}</span>
+    </div>
     {% endfor %}
   </div>
 </section>
 
 <section class="grid-two">
   <section class="panel">
-    <div class="panel-head"><div><p class="eyebrow">Inventory</p><h3>Targets</h3></div></div>
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Inventory</p>
+        <h3>Targets</h3>
+      </div>
+    </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>ID</th><th>Target</th><th>Label</th><th>Criticality</th><th>Action</th></tr></thead>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Target</th>
+            <th>Label</th>
+            <th>Criticality</th>
+            <th>Action</th>
+          </tr>
+        </thead>
         <tbody>
-        {% for t in targets %}
+          {% for t in targets %}
           <tr>
             <td>#{{ t.id }}</td>
             <td><code>{{ t.value }}</code></td>
             <td>{{ t.label or "-" }}</td>
             <td><span class="badge badge-neutral">C{{ t.criticality }}</span></td>
+            {# ✅ form이 <td> 안에 완전히 포함되도록 수정, button은 type="button"으로 submit 방지 #}
             <td>
               <form method="post" action="/scan/{{ t.id }}" class="scan-inline-form">
                 <select name="scan_mode" title="스캔 프로파일 선택">
@@ -147,33 +143,51 @@
                   <option value="extended">📡 Extended (1-10000)</option>
                   <option value="full">🌐 Full (1-65535)</option>
                 </select>
-                <input name="custom_ports" placeholder="직접입력: 80,443,8000-8100" style="width:180px" title="비워두면 위 프로파일 사용">
-                <td><button class="small" onclick="scanTarget({{ t.id }})">Scan</button></td>
+                <input name="custom_ports" placeholder="직접입력: 80,443,8000-8100" style="width:180px"
+                  title="비워두면 위 프로파일 사용">
+                <button type="button" class="small" onclick="scanTarget(event, this.form)">Scan</button>
               </form>
             </td>
           </tr>
-        {% endfor %}
+          {% endfor %}
         </tbody>
       </table>
     </div>
   </section>
 
   <section class="panel">
-    <div class="panel-head"><div><p class="eyebrow">Job Queue</p><h3>Recent Jobs</h3></div></div>
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">Job Queue</p>
+        <h3>Recent Jobs</h3>
+      </div>
+    </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>ID</th><th>Target</th><th>Type</th><th>Status</th><th>Progress</th><th>Message</th></tr></thead>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Target</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Progress</th>
+            <th>Message</th>
+          </tr>
+        </thead>
         <tbody>
-        {% for j in jobs %}
+          {% for j in jobs %}
           <tr>
             <td>#{{ j.id }}</td>
             <td><code>{{ j.value }}</code></td>
             <td>{{ j.job_type }}</td>
             <td><span class="badge status-{{ j.status }}">{{ j.status }}</span></td>
-            <td><div class="progress"><span style="width: {{ j.progress or 0 }}%"></span></div><small>{{ j.stage or "-" }} · {{ j.progress or 0 }}%</small></td>
+            <td>
+              <div class="progress"><span style="width: {{ j.progress or 0 }}%"></span></div><small>{{ j.stage or "-" }}
+                · {{ j.progress or 0 }}%</small>
+            </td>
             <td>{{ j.message or "-" }}</td>
           </tr>
-        {% endfor %}
+          {% endfor %}
         </tbody>
       </table>
     </div>
@@ -181,12 +195,26 @@
 </section>
 
 <section class="panel">
-  <div class="panel-head"><div><p class="eyebrow">Operations</p><h3>Recent Scans</h3></div></div>
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Operations</p>
+      <h3>Recent Scans</h3>
+    </div>
+  </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>ID</th><th>Target</th><th>Status</th><th>Risk</th><th>Summary</th><th>Started</th></tr></thead>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Target</th>
+          <th>Status</th>
+          <th>Risk</th>
+          <th>Summary</th>
+          <th>Started</th>
+        </tr>
+      </thead>
       <tbody>
-      {% for s in scans %}
+        {% for s in scans %}
         {% set g = grade(s.risk_score) %}
         <tr>
           <td><a href="/scans/{{ s.id }}">#{{ s.id }}</a></td>
@@ -196,74 +224,77 @@
           <td>{{ s.summary or "-" }}</td>
           <td>{{ s.started_at }}</td>
         </tr>
-      {% endfor %}
+        {% endfor %}
       </tbody>
     </table>
   </div>
 </section>
 
-
 <script>
-(function () {
-  function pad(n) { return String(n).padStart(2, '0'); }
+  (function () {
+    function pad(n) { return String(n).padStart(2, '0'); }
 
-  function formatLocalTime() {
-    const d = new Date();
-    return d.getFullYear() + '-' +
-      pad(d.getMonth() + 1) + '-' +
-      pad(d.getDate()) + ' ' +
-      pad(d.getHours()) + ':' +
-      pad(d.getMinutes()) + ':' +
-      pad(d.getSeconds());
-  }
+    function formatLocalTime() {
+      const d = new Date();
+      return d.getFullYear() + '-' +
+        pad(d.getMonth() + 1) + '-' +
+        pad(d.getDate()) + ' ' +
+        pad(d.getHours()) + ':' +
+        pad(d.getMinutes()) + ':' +
+        pad(d.getSeconds());
+    }
 
-  function setClock(value) {
-    const el = document.getElementById('server-clock');
-    if (el) el.textContent = value || formatLocalTime();
-  }
+    function setClock(value) {
+      const el = document.getElementById('server-clock');
+      if (el) el.textContent = value || formatLocalTime();
+    }
 
-  async function refreshSchedulerStatus() {
-    setClock(formatLocalTime());
+    async function refreshSchedulerStatus() {
+      setClock(formatLocalTime());
+      try {
+        const res = await fetch('/api/scheduler?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.server_time) setClock(data.server_time);
+        const nextRun = document.getElementById('next-run-time');
+        if (nextRun) {
+          const value = data.next_run || data.next_run_time || data.next_scan || data.next;
+          if (value) nextRun.textContent = value;
+        }
+      } catch (e) {
+        setClock(formatLocalTime());
+      }
+    }
+
+    refreshSchedulerStatus();
+    setInterval(refreshSchedulerStatus, 1000);
+  })();
+
+  // ✅ 수정: event + form을 받아 FormData로 전송 → POST 1번만 발생
+  async function scanTarget(event, form) {
+    event.preventDefault(); // form 기본 submit 차단
 
     try {
-      const res = await fetch('/api/scheduler?t=' + Date.now(), { cache: 'no-store' });
-      if (!res.ok) return;
+      const res = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form), // 선택한 scan_mode / custom_ports 포함
+        redirect: 'follow',
+      });
 
-      const data = await res.json();
-      if (data.server_time) setClock(data.server_time);
-
-      const nextRun = document.getElementById('next-run-time');
-      if (nextRun) {
-        const value = data.next_run || data.next_run_time || data.next_scan || data.next;
-        if (value) nextRun.textContent = value;
+      if (res.status === 429) {
+        const data = await res.json();
+        alert('⚠️ ' + data.detail);
+        return;
       }
+      if (res.ok) {
+        window.location.href = res.url;
+        return;
+      }
+      alert('스캔 오류: ' + res.status);
     } catch (e) {
-      setClock(formatLocalTime());
+      alert('⚠️ 요청이 너무 많습니다. 잠시 후 다시 시도하세요.');
     }
   }
-
-  refreshSchedulerStatus();
-  setInterval(refreshSchedulerStatus, 1000);
-})();
-async function scanTarget(id) {
-  try {
-    const res = await fetch('/scan/' + id, { method: 'POST', redirect: 'follow' });
-    if (res.status === 429) {
-      const data = await res.json();
-      alert('⚠️ ' + data.detail);
-      return;
-    }
-    if (res.ok) {
-      window.location.href = res.url;
-      return;
-    }
-    alert('스캔 오류: ' + res.status);
-  } catch (e) {
-    alert('⚠️ 요청이 너무 많습니다. 잠시 후 다시 시도하세요.');
-  }
-}
 </script>
 
 {% endblock %}
-
-
