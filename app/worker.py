@@ -1,8 +1,8 @@
 import asyncio
 from datetime import datetime, timedelta
-
+ 
 from app.database import get_conn, safe_execute
-from app.scanner import tcp_scan
+from app.scanner import tcp_scan, DEFAULT_PORTS
 from app.nmap_runner import run_nmap
 from app.nuclei_runner import run_nuclei
 from app.diff import detect_changes
@@ -12,11 +12,11 @@ from app.alerts import send_alert
 from app.web_enrichment import run_web_enrichment_sync
 from app.recommendations import build_recommendations
 from pathlib import Path
-
-
+ 
+ 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SCREENSHOT_DIR = BASE_DIR / 'app' / 'static' / 'screenshots'
-
+ 
 def update_job_progress(job_id: int, progress: int, stage: str, message: str):
     try:
         safe_execute(
@@ -25,56 +25,55 @@ def update_job_progress(job_id: int, progress: int, stage: str, message: str):
         )
     except Exception:
         pass
-
-
+ 
+ 
 def update_job_status(job_id: int, status: str, message: str, scan_id: int | None = None, progress: int = 100, stage: str = "done"):
     safe_execute(
         "UPDATE scan_jobs SET status = ?, message = ?, scan_id = ?, progress = ?, stage = ? WHERE id = ?",
         (status, message, scan_id, progress, stage, job_id),
     )
-
-
-
+ 
+ 
 def _build_service_keywords(nmap_rows: list[dict], limit: int = 5) -> list[str]:
     """Build conservative NVD keyword queries from nmap service fingerprints."""
     generic_products = {"", "unknown", "tcpwrapped"}
     keywords: list[str] = []
     seen: set[str] = set()
-
+ 
     for row in nmap_rows or []:
         product = str(row.get("product") or "").strip()
         version = str(row.get("version") or "").strip()
         service = str(row.get("service") or "").strip()
-
+ 
         if product.lower() in generic_products:
             continue
-
+ 
         # Versionless keyword searches are too noisy. Require product+version.
         keyword = f"{product} {version}".strip()
         if not version or len(keyword) < 4:
             continue
-
+ 
         if keyword.lower() not in seen:
             keywords.append(keyword)
             seen.add(keyword.lower())
-
+ 
         # Add a fallback service+product+version keyword for common ambiguous banners.
         if service and service.lower() not in product.lower():
             keyword2 = f"{service} {product} {version}".strip()
             if keyword2.lower() not in seen:
                 keywords.append(keyword2)
                 seen.add(keyword2.lower())
-
+ 
         if len(keywords) >= limit:
             break
-
+ 
     return keywords[:limit]
-
-
+ 
+ 
 async def enrich_service_cves_from_nmap(nmap_rows: list[dict]) -> list[dict]:
     """
     Build CVE candidate findings from nmap service/version fingerprints.
-
+ 
     These are candidate enrichment findings, not validated exploit findings.
     They are marked source=nmap_nvd and confidence=0.65 so the risk engine
     reflects uncertainty and does not overstate keyword search results.
@@ -82,7 +81,7 @@ async def enrich_service_cves_from_nmap(nmap_rows: list[dict]) -> list[dict]:
     keywords = _build_service_keywords(nmap_rows, limit=5)
     if not keywords:
         return []
-
+ 
     try:
         nvd_results = await asyncio.gather(
             *(query_nvd(keyword, limit=3) for keyword in keywords),
@@ -90,7 +89,7 @@ async def enrich_service_cves_from_nmap(nmap_rows: list[dict]) -> list[dict]:
         )
     except Exception:
         return []
-
+ 
     cve_rows: list[tuple[str, str, dict]] = []
     cve_ids: list[str] = []
     for keyword, rows in zip(keywords, nvd_results):
@@ -102,15 +101,15 @@ async def enrich_service_cves_from_nmap(nmap_rows: list[dict]) -> list[dict]:
                 continue
             cve_rows.append((keyword, cve_id, row))
             cve_ids.append(cve_id)
-
+ 
     if not cve_rows:
         return []
-
+ 
     try:
         epss_map = await asyncio.to_thread(query_epss_batch, cve_ids)
     except Exception:
         epss_map = {}
-
+ 
     enriched: list[dict] = []
     seen: set[str] = set()
     for keyword, cve_id, row in cve_rows:
@@ -139,11 +138,11 @@ async def enrich_service_cves_from_nmap(nmap_rows: list[dict]) -> list[dict]:
                 "dedupe_key": key,
             }
         )
-
+ 
     return enriched
-
-
-async def run_scan_job(job_id: int) -> int:
+ 
+ 
+async def run_scan_job(job_id: int, ports: list[int] | None = None, port_spec: str = "quick") -> int:
     conn = get_conn()
     job = conn.execute(
         "SELECT scan_jobs.*, targets.value, targets.criticality FROM scan_jobs JOIN targets ON scan_jobs.target_id = targets.id WHERE scan_jobs.id = ?",
@@ -152,11 +151,11 @@ async def run_scan_job(job_id: int) -> int:
     if not job:
         conn.close()
         raise ValueError("scan job not found")
-
+ 
     target_id = int(job["target_id"])
     target_value = job["value"]
     criticality = int(job["criticality"] or 3)
-
+ 
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn.execute(
         "UPDATE scan_jobs SET status = 'running', started_at = ?, message = ?, progress = 10, stage = ? WHERE id = ?",
@@ -164,21 +163,24 @@ async def run_scan_job(job_id: int) -> int:
     )
     cur = conn.execute(
         "INSERT INTO scans(target_id, status, summary) VALUES (?, 'running', ?)",
-        (target_id, f"job_id={job_id}"),
+        (target_id, f"job_id={job_id} port_spec={port_spec}"),
     )
     scan_id = cur.lastrowid
     conn.execute("UPDATE scan_jobs SET scan_id = ? WHERE id = ?", (scan_id, job_id))
     conn.commit()
     conn.close()
-
+ 
+    # 포트 목록: 외부에서 주입된 것이 없으면 기본값 사용
+    scan_ports = ports if ports is not None else DEFAULT_PORTS
+ 
     try:
-        update_job_progress(job_id, 20, "tcp_scan", "running TCP scan")
-
-        open_ports = await tcp_scan(target_value)
+        update_job_progress(job_id, 20, "tcp_scan", f"running TCP scan ({len(scan_ports)} ports, spec={port_spec})")
+ 
+        open_ports = await tcp_scan(target_value, ports=scan_ports)
         update_job_progress(job_id, 40, "nmap", "running nmap service detection")
-
+ 
         nmap_rows = await asyncio.to_thread(run_nmap, target_value, open_ports, scan_id)
-
+ 
         if not nmap_rows:
             nmap_rows = [
                 {
@@ -193,7 +195,7 @@ async def run_scan_job(job_id: int) -> int:
                 }
                 for p in open_ports
             ]
-
+ 
         conn = get_conn()
         for row in nmap_rows:
             conn.execute(
@@ -215,9 +217,9 @@ async def run_scan_job(job_id: int) -> int:
             )
         conn.commit()
         conn.close()
-
+ 
         update_job_progress(job_id, 65, "nuclei", "running nuclei scan")
-
+ 
         nuclei_findings = await asyncio.to_thread(
             run_nuclei,
             target_value,
@@ -225,7 +227,7 @@ async def run_scan_job(job_id: int) -> int:
             scan_id,
         )
         nuclei_findings = await asyncio.to_thread(enrich_findings_with_intel, nuclei_findings)
-
+ 
         # Role #4 Risk Scoring enrichment:
         # If nuclei does not return CVE IDs, use nmap service/version fingerprints
         # to query NVD and enrich risk scoring with CVSS/EPSS candidate context.
@@ -235,7 +237,7 @@ async def run_scan_job(job_id: int) -> int:
             service_cve_findings = []
         if service_cve_findings:
             nuclei_findings.extend(service_cve_findings)
-
+ 
         conn = get_conn()
         seen = set()
         for finding in nuclei_findings:
@@ -262,7 +264,7 @@ async def run_scan_job(job_id: int) -> int:
                 finding_priority_level = "P3"
             else:
                 finding_priority_level = "P4"
-
+ 
             conn.execute(
                 """
                 INSERT INTO findings(
@@ -293,10 +295,10 @@ async def run_scan_job(job_id: int) -> int:
             )
         conn.commit()
         conn.close()
-
+ 
         
         update_job_progress(job_id, 82, "enrichment", "running web enrichment")
-
+ 
         tech_rows, screenshot_rows = await asyncio.to_thread(
             run_web_enrichment_sync,
             target_value,
@@ -304,9 +306,9 @@ async def run_scan_job(job_id: int) -> int:
             scan_id,
             SCREENSHOT_DIR,
         )
-
+ 
         recommendations = build_recommendations(nmap_rows, nuclei_findings)
-
+ 
         conn = get_conn()
         for tech in tech_rows:
             conn.execute(
@@ -325,9 +327,9 @@ async def run_scan_job(job_id: int) -> int:
             )
         conn.commit()
         conn.close()
-
+ 
         changes = detect_changes(target_id, scan_id)
-
+ 
         conn = get_conn()
         for change in changes:
             if isinstance(change, dict):
@@ -339,15 +341,15 @@ async def run_scan_job(job_id: int) -> int:
                 "INSERT INTO changes(scan_id, change_type, detail) VALUES (?, ?, ?)",
                 (scan_id, change_type, detail),
             )
-
+ 
         update_job_progress(job_id, 95, "finalizing", "calculating risk and finalizing report")
-
+ 
         risk_detail = calculate_risk_detail(nmap_rows, nuclei_findings, changes, criticality)
         risk_score = int(risk_detail["score"])
         risk_level = str(risk_detail["level"])
         priority_level = str(risk_detail["priority"])
         sla_hours = int(risk_detail.get("sla_hours") or 0)
-
+ 
         conn.execute("DELETE FROM risk_reasons WHERE scan_id = ?", (scan_id,))
         for reason in risk_detail.get("reasons", []):
             conn.execute(
@@ -363,24 +365,24 @@ async def run_scan_job(job_id: int) -> int:
                     reason.get("message", ""),
                 ),
             )
-
+ 
         if priority_level in {"P1", "P2"} or risk_score >= 70:
             await send_alert(
                 f"{priority_level} risk scan result: {target_value}",
                 f"Risk score={risk_score}, level={risk_level}, open_ports={len(nmap_rows)}, findings={len(nuclei_findings)}",
                 "high" if priority_level in {"P1", "P2"} else "medium",
             )
-
+ 
         finished = datetime.utcnow().isoformat(timespec="seconds")
         summary = f"open_ports={len(nmap_rows)}, findings={len(seen)}, tech={len(tech_rows)}, screenshots={len(screenshot_rows)}, recommendations={len(recommendations)}, changes={len(changes)}, priority={priority_level}, level={risk_level}"
-
+ 
         screenshot_errors = [s for s in screenshot_rows if s.get("status") in {"failed", "skipped"}]
         scan_status = "partial_success" if screenshot_errors else "done"
         job_status = scan_status
         status_message = f"completed: {summary}"
         if screenshot_errors:
             status_message += "; screenshot capture skipped/failed"
-
+ 
         conn.execute(
             """
             UPDATE scans
@@ -408,7 +410,7 @@ async def run_scan_job(job_id: int) -> int:
                 scan_id,
             ),
         )
-
+ 
         if priority_level in {"P1", "P2", "P3"}:
             due_at = (datetime.utcnow() + timedelta(hours=sla_hours or 720)).isoformat(timespec="seconds")
             top_reason = ""
@@ -428,7 +430,7 @@ async def run_scan_job(job_id: int) -> int:
         conn.commit()
         conn.close()
         return int(scan_id)
-
+ 
     except Exception as exc:
         finished = datetime.utcnow().isoformat(timespec="seconds")
         conn = get_conn()
@@ -447,3 +449,4 @@ async def run_scan_job(job_id: int) -> int:
         conn.commit()
         conn.close()
         return int(scan_id)
+ 
