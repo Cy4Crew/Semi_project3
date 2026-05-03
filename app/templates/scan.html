@@ -26,6 +26,16 @@
   <a class="button secondary" href="/reports/{{ scan.id }}">Download Markdown Report</a>
 </section>
 
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">LLM Insight</p>
+      <h3>🔍 AI ASM 인사이트</h3>
+    </div>
+  </div>
+  <pre style="white-space: pre-wrap; margin: 0;">{{ ai_summary }}</pre>
+</section>
+
 <section class="grid-three">
   <div class="mini-card"><span>Open Ports</span><strong>{{ ports|length }}</strong></div>
   <div class="mini-card"><span>Findings</span><strong>{{ findings|length }}</strong></div>

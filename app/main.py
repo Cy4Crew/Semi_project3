@@ -2,6 +2,7 @@ from fastapi import FastAPI, Form, HTTPException, Request, UploadFile, File, Que
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from app.llm_report import generate_asm_report
 
 from pathlib import Path
 
@@ -193,6 +194,19 @@ def scan_detail(
     screenshots = conn.execute("SELECT * FROM screenshots WHERE scan_id = ? ORDER BY id", (scan_id,)).fetchall()
     recommendations = conn.execute("SELECT * FROM recommendations WHERE scan_id = ? ORDER BY severity", (scan_id,)).fetchall()
     job = conn.execute("SELECT * FROM scan_jobs WHERE scan_id = ? ORDER BY id DESC LIMIT 1", (scan_id,)).fetchone()
+
+    try:
+        ai_summary = generate_asm_report(
+            scan=scan,
+            ports=ports,
+            findings=findings,
+            changes=changes,
+            tech_rows=tech_rows,
+            recommendations=recommendations,
+        )
+    except Exception as e:
+        ai_summary = f"AI 리포트 생성 실패: {e}"
+
     conn.close()
 
     return templates.TemplateResponse(
@@ -208,6 +222,7 @@ def scan_detail(
             "screenshots": screenshots,
             "recommendations": recommendations,
             "job": job,
+            "ai_summary": ai_summary,
             "grade": grade,
             "filters": {"severity": severity, "port": port},
         },
