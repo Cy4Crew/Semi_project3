@@ -139,7 +139,7 @@
             <td><code>{{ t.value }}</code></td>
             <td>{{ t.label or "-" }}</td>
             <td><span class="badge badge-neutral">C{{ t.criticality }}</span></td>
-            <td><form method="post" action="/scan/{{ t.id }}"><button type="submit" class="small">Scan</button></form></td>
+            <td><button class="small" onclick="scanTarget({{ t.id }})">Scan</button></td>
           </tr>
         {% endfor %}
         </tbody>
@@ -234,6 +234,23 @@
   refreshSchedulerStatus();
   setInterval(refreshSchedulerStatus, 1000);
 })();
+async function scanTarget(id) {
+  try {
+    const res = await fetch('/scan/' + id, { method: 'POST', redirect: 'follow' });
+    if (res.status === 429) {
+      const data = await res.json();
+      alert('⚠️ ' + data.detail);
+      return;
+    }
+    if (res.ok) {
+      window.location.href = res.url;
+      return;
+    }
+    alert('스캔 오류: ' + res.status);
+  } catch (e) {
+    alert('⚠️ 요청이 너무 많습니다. 잠시 후 다시 시도하세요.');
+  }
+}
 </script>
 
 {% endblock %}
