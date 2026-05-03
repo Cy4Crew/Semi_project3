@@ -1,0 +1,18 @@
+{
+  "_comment": "Optional override file. The app also has safe defaults in app/risk_policy_config.py.",
+  "candidate_guardrails": {
+    "nmap_nvd_default_confidence": 0.65,
+    "score_cap": 35,
+    "promotion_score_cap": 89
+  },
+  "risk_levels": {
+    "critical_min": 90,
+    "high_min": 70,
+    "medium_min": 30
+  },
+  "priority": {
+    "p1_score_min": 90,
+    "p2_score_min": 70,
+    "p3_score_min": 30
+  }
+}
