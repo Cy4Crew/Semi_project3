@@ -264,6 +264,35 @@ def report(scan_id: int):
     path = generate_report(scan_id)
     return FileResponse(path, media_type="text/markdown", filename=path.name)
 
+@app.get("/reports/{scan_id}/html", response_class=HTMLResponse)
+def report_html(request: Request, scan_id: int):
+    conn = get_conn()
+    scan = conn.execute(
+        "SELECT scans.*, targets.value, targets.label FROM scans JOIN targets ON scans.target_id = targets.id WHERE scans.id = ?",
+        (scan_id,),
+    ).fetchone()
+    if not scan:
+        conn.close()
+        raise HTTPException(404, "scan not found")
+    ports           = conn.execute("SELECT * FROM ports WHERE scan_id = ? ORDER BY port", (scan_id,)).fetchall()
+    findings        = conn.execute("SELECT * FROM findings WHERE scan_id = ? ORDER BY severity", (scan_id,)).fetchall()
+    changes         = conn.execute("SELECT * FROM changes WHERE scan_id = ?", (scan_id,)).fetchall()
+    tech_rows       = conn.execute("SELECT * FROM tech_detections WHERE scan_id = ? ORDER BY technology", (scan_id,)).fetchall()
+    recommendations = conn.execute("SELECT * FROM recommendations WHERE scan_id = ? ORDER BY severity", (scan_id,)).fetchall()
+    conn.close()
+    return templates.TemplateResponse(
+        "report.html",
+        {
+            "request": request,
+            "scan": scan,
+            "ports": ports,
+            "findings": findings,
+            "changes": changes,
+            "tech_rows": tech_rows,
+            "recommendations": recommendations,
+            "grade": grade,
+        },
+    )
 
 
 
@@ -345,6 +374,36 @@ def api_jobs(user=Depends(verify_api_key)):
     conn.close()
     return [dict(j) for j in jobs]
 
+@app.get("/api/jobs/public")
+def api_jobs_public():
+    conn = get_conn()
+    jobs = conn.execute(
+        """
+        SELECT scan_jobs.*, targets.value
+        FROM scan_jobs JOIN targets ON scan_jobs.target_id = targets.id
+        ORDER BY scan_jobs.id DESC LIMIT 50
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(j) for j in jobs]
+
+@app.get("/api/scans/public")
+def api_scans_public():
+    conn = get_conn()
+    scans = conn.execute(
+        """
+        SELECT scans.*, targets.value
+        FROM scans JOIN targets ON scans.target_id = targets.id
+        ORDER BY scans.id DESC LIMIT 100
+        """
+    ).fetchall()
+    conn.close()
+    result = []
+    for s in scans:
+        d = dict(s)
+        d['grade'] = grade(int(d.get('risk_score', 0)))
+        result.append(d)
+    return result
 
 @app.get("/api/history")
 def api_history(limit: int = 20, user=Depends(verify_api_key)):
@@ -403,6 +462,60 @@ async def login(request: Request, api_key: str = Form(...)):
         resp = RedirectResponse("/", status_code=303)
     create_session(resp, user)
     return resp
+
+@app.get("/assets", response_class=HTMLResponse)
+def assets_page(request: Request):
+    user = get_session(request)
+    if not user:
+        return RedirectResponse("/admin")
+    conn = get_conn()
+    targets = conn.execute("SELECT * FROM targets ORDER BY id DESC").fetchall()
+    conn.close()
+    return templates.TemplateResponse("assets.html", {
+        "request": request,
+        "targets": targets,
+    })
+
+@app.get("/scans", response_class=HTMLResponse)
+def scans_page(request: Request):
+    user = get_session(request)
+    if not user:
+        return RedirectResponse("/admin")
+    conn = get_conn()
+    scans = conn.execute(
+        """
+        SELECT scans.*, targets.value
+        FROM scans JOIN targets ON scans.target_id = targets.id
+        ORDER BY scans.id DESC
+        """
+    ).fetchall()
+    conn.close()
+    return templates.TemplateResponse("scans.html", {
+        "request": request,
+        "scans": scans,
+        "grade": grade,
+    })
+
+@app.get("/reports", response_class=HTMLResponse)
+def reports_page(request: Request):
+    user = get_session(request)
+    if not user:
+        return RedirectResponse("/admin")
+    conn = get_conn()
+    scans = conn.execute(
+        """
+        SELECT scans.*, targets.value, targets.label
+        FROM scans JOIN targets ON scans.target_id = targets.id
+        WHERE scans.status IN ('done', 'partial_success')
+        ORDER BY scans.id DESC
+        """
+    ).fetchall()
+    conn.close()
+    return templates.TemplateResponse("reports.html", {
+        "request": request,
+        "scans": scans,
+        "grade": grade,
+    })
 
 @app.get("/logout")
 def logout():

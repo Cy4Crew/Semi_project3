@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block page_title %}Reports{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <div class="panel-head">
+    <div><p class="eyebrow">Scan Reports</p><h3>리포트 목록</h3></div>
+    <span class="badge badge-info">{{ scans | length }} reports</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Target</th><th>Label</th><th>Status</th><th>Risk</th><th>Started</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+      {% for s in scans %}
+        {% set g = grade(s.risk_score) %}
+        <tr>
+          <td>#{{ s.id }}</td>
+          <td><code>{{ s.value }}</code></td>
+          <td>{{ s.label or "-" }}</td>
+          <td><span class="badge status-{{ s.status }}">{{ s.status }}</span></td>
+          <td><span class="risk risk-{{ g|lower }}">{{ s.risk_score }} / {{ g }}</span></td>
+          <td>{{ s.started_at }}</td>
+          <td>
+            <a class="button small" href="/reports/{{ s.id }}/html">📄 HTML</a>
+            <a class="button small secondary" href="/reports/{{ s.id }}">⬇ MD</a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}

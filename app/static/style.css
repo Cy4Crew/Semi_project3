@@ -248,7 +248,7 @@ tr:hover td { background: #fcfcfd; }
 .bar-medium { background: #f59e0b; }
 .bar-high { background: #ef4444; }
 .bar-wrap span { font-size: 12px; color: var(--muted); }
-
+.bar-critical { background: #ef4444; }
 .screenshot-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
@@ -420,34 +420,38 @@ tr:hover td { background: #fcfcfd; }
   margin-bottom: 10px;
 }
 
-/* ── 포트 스캔 인라인 폼 ─────────────────────────────────────────── */
-.scan-inline-form {
+/* 100% Stack Bar */
+.stack100-bar {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  height: 28px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f1f5f9;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+.s100-seg { transition: width .4s ease; cursor: default; }
+.s100-seg:hover { filter: brightness(1.12); }
+.s100-high  { background: #ef4444; }
+.s100-med   { background: #f59e0b; }
+.s100-low   { background: #22c55e; }
+.s100-info  { background: #94a3b8; }
+
+.stack100-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--muted);
   flex-wrap: wrap;
 }
-
-.scan-inline-form select {
-  padding: 4px 8px;
-  font-size: 0.8rem;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: #f9fafb;
-  cursor: pointer;
-  min-width: 160px;
+.s100-dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: middle;
 }
-
-.scan-inline-form input[type="text"],
-.scan-inline-form input:not([type]) {
-  padding: 4px 8px;
-  font-size: 0.78rem;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: #fff;
-}
-
-.scan-inline-form input::placeholder {
-  color: #9ca3af;
-  font-size: 0.75rem;
-}
+.s100-dot.s100-high  { background: #ef4444; }
+.s100-dot.s100-med   { background: #f59e0b; }
+.s100-dot.s100-low   { background: #22c55e; }
+.s100-dot.s100-info  { background: #94a3b8; }
