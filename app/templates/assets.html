@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block page_title %}Assets{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <div class="panel-head">
+    <div><p class="eyebrow">Asset Inventory</p><h3>등록된 타겟</h3></div>
+    <span class="badge badge-info">{{ targets | length }} targets</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Target</th><th>Label</th><th>Criticality</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+      {% for t in targets %}
+        <tr>
+          <td>#{{ t.id }}</td>
+          <td><code>{{ t.value }}</code></td>
+          <td>{{ t.label or "-" }}</td>
+          <td><span class="badge badge-neutral">C{{ t.criticality }}</span></td>
+          <td><a class="button small" href="/?q={{ t.value }}">스캔 보기</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}

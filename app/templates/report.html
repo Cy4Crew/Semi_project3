@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ASM Report #{{ scan.id }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .report-wrap { max-width: 960px; margin: 40px auto; padding: 0 24px 80px; }
+    .report-header {
+      background: linear-gradient(135deg, #0f172a, #1e3a5f);
+      color: white; border-radius: 16px;
+      padding: 36px 40px; margin-bottom: 28px;
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 24px;
+    }
+    .report-header h1 { font-size: 22px; font-weight: 800; margin-bottom: 8px; }
+    .report-header p  { font-size: 14px; color: #94a3b8; margin: 3px 0; }
+    .report-header code { background: rgba(255,255,255,.12); padding: 2px 7px; border-radius: 5px; }
+    .risk-badge { text-align: center; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); border-radius: 12px; padding: 16px 28px; min-width: 110px; flex-shrink: 0; }
+    .risk-badge .score { font-size: 42px; font-weight: 900; line-height: 1; }
+    .risk-badge .glabel { font-size: 14px; font-weight: 700; color: #fbbf24; margin-top: 4px; }
+    .action-bar { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+    .btn { padding: 9px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer; border: none; }
+    .btn-primary   { background: #2563eb; color: white; }
+    .btn-secondary { background: white; color: #374151; border: 1px solid #d1d5db; }
+    @media print { .action-bar { display: none; } }
+    .rsection { background: white; border-radius: 12px; padding: 24px 28px; margin-bottom: 20px; border: 1px solid #e2e8f0; }
+    .rsection-title { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 16px; }
+    .sum-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
+    .sum-card { background: #f8fafc; border-radius: 8px; padding: 14px; text-align: center; }
+    .sum-card .num { font-size: 28px; font-weight: 800; }
+    .sum-card .lbl { font-size: 12px; color: #64748b; margin-top: 2px; }
+    .stack-bar { display: flex; height: 22px; border-radius: 6px; overflow: hidden; gap: 2px; background: #f1f5f9; margin-bottom: 10px; }
+    .sb-seg { transition: width .3s; }
+    .sb-high { background: #ef4444; } .sb-med { background: #f59e0b; }
+    .sb-low  { background: #22c55e; } .sb-info { background: #94a3b8; }
+    .stack-leg { display: flex; gap: 14px; font-size: 12px; color: #64748b; flex-wrap: wrap; }
+    .leg-dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 3px; vertical-align: middle; }
+    .rec-card { border-left: 3px solid #e2e8f0; padding: 10px 14px; margin-bottom: 10px; background: #f8fafc; border-radius: 0 8px 8px 0; }
+    .rec-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .rec-card p  { font-size: 13px; color: #475467; }
+  </style>
+</head>
+<body>
+<div class="report-wrap">
+
+  <div class="report-header">
+    <div>
+      <h1>ASM-Lite Report <span style="opacity:.6">#{{ scan.id }}</span></h1>
+      <p>Target: <code>{{ scan.value }}</code></p>
+      {% if scan.label %}<p>Label: {{ scan.label }}</p>{% endif %}
+      <p>Status: {{ scan.status }}</p>
+      <p>Started: {{ scan.started_at }} · Finished: {{ scan.finished_at or "–" }}</p>
+    </div>
+    <div class="risk-badge">
+      <div class="score">{{ scan.risk_score }}</div>
+      <div class="glabel">{{ grade(scan.risk_score | int) }}</div>
+    </div>
+  </div>
+
+  <div class="action-bar">
+    <a class="btn btn-primary" href="/scans/{{ scan.id }}">← 스캔 상세</a>
+    <a class="btn btn-secondary" href="/reports/{{ scan.id }}">⬇ Markdown</a>
+    <button class="btn btn-secondary" onclick="window.print()">🖨 인쇄 / PDF</button>
+  </div>
+
+  <div class="rsection">
+    <div class="rsection-title">Summary</div>
+    <div class="sum-grid">
+      <div class="sum-card"><div class="num">{{ ports | length }}</div><div class="lbl">Open Ports</div></div>
+      <div class="sum-card"><div class="num">{{ findings | length }}</div><div class="lbl">Findings</div></div>
+      <div class="sum-card"><div class="num">{{ changes | length }}</div><div class="lbl">Changes</div></div>
+    </div>
+    {% if findings | length > 0 %}
+      {% set total = findings | length %}
+      {% set crit = findings | selectattr('severity', 'equalto', 'critical') | list | length %}
+      {% set high = findings | selectattr('severity', 'equalto', 'high')     | list | length %}
+      {% set med  = findings | selectattr('severity', 'equalto', 'medium')   | list | length %}
+      {% set low  = findings | selectattr('severity', 'equalto', 'low')      | list | length %}
+      {% set info = findings | selectattr('severity', 'equalto', 'info')     | list | length %}
+      <div class="stack-bar">
+        {% if crit+high > 0 %}<div class="sb-seg sb-high" style="width:{{ ((crit+high)/total*100)|round(1) }}%" title="Critical/High {{ crit+high }}"></div>{% endif %}
+        {% if med > 0 %}<div class="sb-seg sb-med" style="width:{{ (med/total*100)|round(1) }}%" title="Medium {{ med }}"></div>{% endif %}
+        {% if low > 0 %}<div class="sb-seg sb-low" style="width:{{ (low/total*100)|round(1) }}%" title="Low {{ low }}"></div>{% endif %}
+        {% if info > 0 %}<div class="sb-seg sb-info" style="width:{{ (info/total*100)|round(1) }}%" title="Info {{ info }}"></div>{% endif %}
+      </div>
+      <div class="stack-leg">
+        <span><span class="leg-dot" style="background:#ef4444"></span>Critical/High · {{ crit+high }}</span>
+        <span><span class="leg-dot" style="background:#f59e0b"></span>Medium · {{ med }}</span>
+        <span><span class="leg-dot" style="background:#22c55e"></span>Low · {{ low }}</span>
+        <span><span class="leg-dot" style="background:#94a3b8"></span>Info · {{ info }}</span>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="rsection">
+    <div class="rsection-title">Open Ports</div>
+    {% if ports %}
+    <table><thead><tr><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>CPE</th></tr></thead>
+    <tbody>
+    {% for p in ports %}
+      <tr><td><code>{{ p.port }}/{{ p.protocol }}</code></td><td>{{ p.service or "–" }}</td><td>{{ p.product or "–" }}</td><td>{{ p.version or "–" }}</td><td><code>{{ p.cpe or "–" }}</code></td></tr>
+    {% endfor %}
+    </tbody></table>
+    {% else %}<p style="color:#94a3b8;font-size:13px">포트 정보 없음</p>{% endif %}
+  </div>
+
+  <div class="rsection">
+    <div class="rsection-title">Nuclei Findings</div>
+    {% if findings %}
+    <table><thead><tr><th>Severity</th><th>Template</th><th>Name</th><th>Target</th></tr></thead>
+    <tbody>
+    {% for f in findings %}
+      <tr>
+        <td><span class="severity severity-{{ f.severity|lower }}">{{ f.severity }}</span></td>
+        <td><code>{{ f.template_id }}</code></td>
+        <td>{{ f.name }}</td>
+        <td>{{ f.target }}</td>
+      </tr>
+    {% endfor %}
+    </tbody></table>
+    {% else %}<p style="color:#94a3b8;font-size:13px">발견된 취약점 없음</p>{% endif %}
+  </div>
+
+  {% if changes %}
+  <div class="rsection">
+    <div class="rsection-title">Changes</div>
+    {% for c in changes %}
+      <div style="padding:8px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
+        <span style="background:#eff6ff;color:#1d4ed8;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:700;margin-right:8px;">{{ c.change_type }}</span>{{ c.detail }}
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if tech_rows %}
+  <div class="rsection">
+    <div class="rsection-title">Technology Detection</div>
+    <table><thead><tr><th>URL</th><th>Technology</th><th>Evidence</th></tr></thead>
+    <tbody>
+    {% for t in tech_rows %}
+      <tr><td><code>{{ t.url }}</code></td><td>{{ t.technology }}</td><td>{{ t.evidence }}</td></tr>
+    {% endfor %}
+    </tbody></table>
+  </div>
+  {% endif %}
+
+  {% if recommendations %}
+  <div class="rsection">
+    <div class="rsection-title">Recommendations</div>
+    {% for r in recommendations %}
+      <div class="rec-card" style="border-left-color:{% if r.severity|lower in ['high','critical'] %}#ef4444{% elif r.severity|lower == 'medium' %}#f59e0b{% else %}#22c55e{% endif %}">
+        <h4><span class="severity severity-{{ r.severity|lower }}">{{ r.severity }}</span> &nbsp;{{ r.title }}</h4>
+        <p>{{ r.recommendation }}</p>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+</body>
+</html>
