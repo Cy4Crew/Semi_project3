@@ -1,206 +1,142 @@
 # README_OPERATIONS
 
-This document explains the internal operation, module responsibilities, data flow, and troubleshooting process for ASM-Lite / Semi_project3.
+## Purpose
 
-General users should read `README.md` and `README_DOCKER.md` first. This document is intended for developers and operators who need to understand the internal pipeline.
+This document provides a detailed, code-level explanation of how the system operates internally.
+
+It is intended for developers who need to understand execution flow, module responsibilities, data handling, and troubleshooting.
 
 ---
 
-## End-to-End Execution Flow
+## End-to-End Execution Flow (Detailed)
+
+1. Client accesses the Web UI or API.
+2. FastAPI receives the request in `main.py`.
+3. Target data is stored in `targets`.
+4. A scan job is created in `scan_jobs`.
+5. `worker.py` orchestrates the full scan lifecycle.
+6. `scanner.py` runs asynchronous TCP port checks.
+7. `nmap_runner.py` executes Nmap service detection.
+8. Nmap XML is parsed into structured rows.
+9. `nuclei_runner.py` executes web vulnerability scanning.
+10. `cve_api.py` enriches findings with CVE, EPSS, and KEV data.
+11. `web_enrichment.py` collects technology evidence and screenshots.
+12. `recommendations.py` builds remediation recommendations.
+13. Change detection compares current and previous scans.
+14. `risk.py` calculates score, level, priority, SLA, and reasons.
+15. `report.py` generates Markdown and HTML report output.
+16. API and Web UI return structured results.
+
+---
+
+## Execution Sequence (Pseudo Code)
 
 ```text
-User
- |
- v
-FastAPI Web UI / API
- |
- v
-Target Registration
- |
- v
-Scan Job Creation
- |
- v
-worker.run_scan_job
- |
- +--> TCP Port Scan
- +--> Nmap Service Detection
- +--> Nuclei Vulnerability Scan
- +--> NVD / EPSS / KEV Enrichment
- +--> Web Enrichment / Screenshot
- +--> Recommendation Build
- +--> Change Detection
- +--> Risk Scoring
- |
- v
-SQLite Persistence
- |
- v
-Dashboard / Scan Detail / Report
+run_scan_job(job_id):
+    job = load scan job and target
+    scan_id = create scan record
+
+    open_ports = tcp_scan(target, ports)
+
+    nmap_rows = run_nmap(target, open_ports, scan_id)
+    save nmap_rows to ports
+
+    nuclei_findings = run_nuclei(target, web_ports, scan_id)
+    enriched_findings = enrich_findings_with_intel(nuclei_findings)
+
+    service_cve_candidates = enrich_service_cves_from_nmap(nmap_rows)
+    merge findings
+
+    save findings
+
+    tech_rows, screenshot_rows = run_web_enrichment_sync(...)
+    save tech detections and screenshots
+
+    recommendations = build_recommendations(...)
+    save recommendations
+
+    changes = detect_changes(target_id, scan_id)
+    save changes
+
+    risk_detail = calculate_risk_detail(...)
+    save risk score and risk reasons
+
+    finalize scan status
 ```
 
 ---
 
-## Module Responsibilities
+## Module Deep Dive
 
-### app/main.py
-
-FastAPI entry point.
+### 1. main.py
 
 Responsibilities:
 
-- Create the FastAPI app
-- Mount static files
-- Connect Jinja2 templates
-- Initialize DB and auth tables at startup
-- Start the scheduler
-- Serve web pages
-- Serve API routes
+- Entry point for FastAPI
+- Defines API routes
+- Handles incoming HTTP requests
+- Renders Web UI pages
+- Triggers scan process
+- Serves reports
+- Manages admin login and API keys
 
-Main pages:
-
-```text
-/
- /admin
- /admin/manage
- /assets
- /scans
- /scans/{scan_id}
- /reports
- /reports/{scan_id}
- /reports/{scan_id}/html
- /ports/{port}
-```
-
-Main APIs:
+Important routes:
 
 ```text
-/api/scheduler
-/api/jobs
-/api/jobs/public
-/api/scans/public
-/api/history
-/api/keys
+GET  /
+POST /targets
+POST /targets/upload
+POST /scan/{target_id}
+GET  /scans/{scan_id}
+GET  /reports/{scan_id}
+GET  /reports/{scan_id}/html
+GET  /admin
+GET  /admin/manage
 ```
 
 ---
 
-### app/auth.py
+### 2. scanner.py
 
-Handles authentication, authorization, sessions, and rate limiting.
+Responsibilities:
 
-Main responsibilities:
+- Defines default and extended port lists
+- Defines scan profiles
+- Parses custom port input
+- Expands small CIDR ranges
+- Runs asynchronous TCP port checks
 
-- Issue API keys
-- Store hashed API keys
-- Verify API keys
-- Check admin role
-- Create session cookies
-- Validate login sessions
-- Apply scan request rate limits
-- Enforce maximum target count
-
-On first startup, the default admin API key is generated automatically.
-
-```text
-ADMIN_API_KEY.txt
-```
-
-In production-like usage, this file should be stored safely and should not be committed to a public repository.
-
----
-
-### app/database.py
-
-Handles SQLite connection and schema creation.
-
-Main characteristics:
-
-- SQLite database
-- WAL mode enabled
-- `busy_timeout` configured
-- Safe SQL execution helper
-- Migration-like column addition
-
-Main tables:
-
-| Table | Purpose |
-|---|---|
-| `targets` | Registered scan targets |
-| `scan_jobs` | Scan job queue and progress state |
-| `scans` | Scan result metadata |
-| `ports` | Open ports and service data |
-| `findings` | Nuclei findings and CVE candidates |
-| `changes` | Changes compared to previous scans |
-| `tech_detections` | Web technology detection results |
-| `screenshots` | Screenshot collection results |
-| `recommendations` | Remediation recommendations |
-| `risk_reasons` | Explainable risk score reasons |
-| `risk_issues` | Prioritized risk issues |
-| `api_keys` | API key management table |
-
----
-
-### app/scanner.py
-
-Handles target expansion, port input parsing, and TCP scanning.
-
-Supported target types:
-
-- IP address
-- Domain
-- CIDR
-
-CIDR ranges are limited to prevent overly broad scans.
-
-Supported port input:
+Supported input:
 
 ```text
 quick
 standard
 extended
 full
-22,80,443
+80,443,8080
 8000-8100
 22,80,8000-8100
 ```
 
-Scan profiles:
-
-| Profile | Scope |
-|---|---|
-| `quick` | Major ports |
-| `standard` | Extended common ports |
-| `extended` | 1-10000 |
-| `full` | 1-65535 |
-
-`tcp_scan()` uses `asyncio.open_connection()` to check whether ports are reachable.
-
 ---
 
-### app/worker.py
+### 3. worker.py
 
-Core scan pipeline orchestrator.
+Core orchestrator.
 
-Main stages inside `run_scan_job()`:
+Responsibilities:
 
-1. Load the job from `scan_jobs`
-2. Mark the job as `running`
-3. Create a `scans` record
-4. Run TCP port scan
-5. Run Nmap service detection
-6. Store Nmap results in `ports`
-7. Run Nuclei scan
-8. Enrich Nuclei results with CVE/EPSS/KEV data
-9. Add NVD candidate CVEs based on Nmap service/version data
-10. Store findings
-11. Run web technology detection and screenshot collection
-12. Generate recommendations
-13. Detect changes
-14. Calculate risk score
-15. Store `risk_reasons`
-16. Send alerts when required
-17. Finalize the scan as `done`, `partial_success`, or `failed`
+- Controls execution order
+- Handles data passing between modules
+- Updates job progress
+- Preserves partial results when possible
+- Finalizes scan status
+
+Key logic:
+
+```text
+TCP Scan -> Nmap -> Nuclei -> CVE/EPSS/KEV -> Web Enrichment -> Recommendations -> Change Detection -> Risk
+```
 
 Progress stages:
 
@@ -216,307 +152,215 @@ Progress stages:
 
 ---
 
-### app/nmap_runner.py
+### 4. nmap_runner.py
 
-Runs Nmap and parses XML output.
-
-Command structure:
+Execution command:
 
 ```bash
 nmap -sV -O --version-light -p <ports> -oX <output.xml> <target>
 ```
 
-Collected fields:
+Details:
 
-- port
+- `-sV`: service version detection
+- `-O`: OS detection attempt
+- `--version-light`: lighter version detection
+- `-p`: scan only selected open TCP ports from the TCP scan phase
+- `-oX`: write XML output
+
+Output:
+
+- XML file under the data directory
+
+Parsing extracts:
+
+- open ports
 - protocol
-- state
-- service
-- product
-- version
-- cpe
-- source
-
-If Nmap is not available, the pipeline falls back to TCP scan output.
+- service names
+- service products
+- service versions
+- CPE values
 
 ---
 
-### app/nuclei_runner.py
+### 5. Parsing Layer
 
-Runs Nuclei against detected web ports.
-
-Web ports:
+Transforms:
 
 ```text
-80, 443, 8000, 8080, 8443, 3000, 5000, 9000
+Nmap XML -> structured rows -> SQLite ports table
 ```
 
-URL generation rules:
+Structure example:
 
-```text
-80    -> http://host
-443   -> https://host
-8080  -> http://host:8080
-8443  -> https://host:8443
+```json
+{
+  "port": 22,
+  "protocol": "tcp",
+  "state": "open",
+  "service": "ssh",
+  "product": "OpenSSH",
+  "version": "8.2",
+  "cpe": "",
+  "source": "nmap"
+}
 ```
 
-Nuclei command:
+---
+
+### 6. nuclei_runner.py
+
+Execution:
 
 ```bash
 nuclei -l <target_file> -jsonl -o <output_file> -silent
 ```
 
-Collected fields:
+Processing extracts:
 
-- target
-- template_id
-- name
+- template ID
+- matched URL
 - severity
-- matched_at
+- CVE reference
+- CVSS score
 - description
-- cve_id
-- cvss_score
-- dedupe_key
+- dedupe key
+
+Nuclei is run against generated web URLs from detected web ports.
 
 ---
 
-### app/cve_api.py
+### 7. cve_api.py
 
-Handles vulnerability intelligence enrichment.
+Function:
 
-Main responsibilities:
+- Calls external vulnerability intelligence sources
+- Extracts CVE IDs
+- Queries NVD
+- Queries EPSS
+- Checks CISA KEV status
 
-- Extract CVE IDs
-- Query NVD
-- Query EPSS
-- Check CISA KEV status
-- Enrich Nuclei findings
-- Support Nmap service/version-based CVE candidate enrichment
+Adds:
 
-Using an NVD API key helps reduce rate-limit issues.
-
-```env
-NVD_API_KEY=<key>
-```
+- CVE ID
+- CVSS score
+- severity classification
+- EPSS score
+- EPSS percentile
+- KEV status
+- source
+- confidence
 
 ---
 
-### app/risk.py
+### 8. risk.py
 
-Risk scoring engine.
+Core algorithm.
 
-Inputs:
+Input:
 
-- Open ports
-- Vulnerability findings
-- Changes
-- Target criticality
+- parsed ports
+- enriched vulnerabilities
+- detected changes
+- target criticality
 
-Outputs:
+Output:
 
-- score
-- raw_score
-- level
+- final risk score
+- risk level
 - priority
-- sla_hours
-- max_cvss
-- max_epss
-- max_epss_percentile
-- kev_count
-- ssvc_action
-- has_validated_vulnerability
-- has_candidate_vulnerability
-- reasons
+- SLA hours
+- scoring reasons
+- SSVC-style action
+
+Important scoring inputs:
+
+- port exposure
+- administrative service exposure
+- database/infrastructure exposure
+- legacy or clear-text services
+- CVSS score
+- EPSS probability
+- EPSS percentile
+- CISA KEV status
+- new open ports
+- new findings
+- asset criticality
 
 Risk levels:
 
-| Score | Level |
+| Score Range | Level |
 |---:|---|
-| 0-29 | Low |
-| 30-69 | Medium |
-| 70-89 | High |
-| 90-100 | Critical |
+| 0 - 29 | Low |
+| 30 - 69 | Medium |
+| 70 - 89 | High |
+| 90 - 100 | Critical |
 
-Priorities:
+Important policy:
 
-| Priority | Meaning |
-|---|---|
-| P1 | Immediate response |
-| P2 | Fast response |
-| P3 | Planned response |
-| P4 | Low priority |
-
-Nmap/NVD service-version CVEs are treated as candidate evidence. Guardrails prevent candidate-only evidence from being over-promoted to Critical/P1 without validated vulnerability or KEV evidence.
+- Nmap/NVD service-version CVE candidates are useful for prioritization.
+- Candidate-only evidence is capped and cannot over-promote a target above policy limits without validated CVE or KEV evidence.
 
 ---
 
-### app/web_enrichment.py
+### 9. report.py
 
-Collects web service enrichment data.
+Responsibilities:
 
-Main responsibilities:
+- Aggregate processed scan data
+- Generate Markdown report files
+- Provide download-ready output
+- Support UI-compatible report rendering
+
+Report endpoints:
+
+```text
+GET /reports/{scan_id}
+GET /reports/{scan_id}/html
+```
+
+---
+
+### 10. database.py
+
+Responsibilities:
+
+- SQLite connection management
+- WAL mode setup
+- Schema creation
+- Index creation
+- Migration-style column additions
+- Retry-safe SQL execution helpers
+
+Main tables:
+
+| Table | Purpose |
+|---|---|
+| `targets` | Registered scan targets |
+| `scan_jobs` | Scan job queue and progress |
+| `scans` | Scan metadata and final risk summary |
+| `ports` | Open ports and service detection results |
+| `findings` | Nuclei findings and CVE candidates |
+| `changes` | Differences from previous scans |
+| `tech_detections` | Web technology evidence |
+| `screenshots` | Screenshot capture results |
+| `recommendations` | Remediation guidance |
+| `risk_reasons` | Explainable scoring reasons |
+| `risk_issues` | Priority issues and SLA tracking |
+| `api_keys` | API key records |
+
+---
+
+### 11. web_enrichment.py
+
+Responsibilities:
 
 - HTTP/HTTPS probing
-- Web technology detection
+- Technology detection
 - Screenshot capture
-- Status and error recording
+- Web evidence collection
 
-Result tables:
-
-- `tech_detections`
-- `screenshots`
-
-Screenshot failure may produce `partial_success` instead of full scan failure.
-
----
-
-### app/recommendations.py
-
-Generates remediation recommendations from ports and vulnerability findings.
-
-Stored in:
-
-```text
-recommendations
-```
-
-Recommendations are used in scan detail pages and reports.
-
----
-
-### app/report.py
-
-Generates Markdown reports from scan results.
-
-Download endpoint:
-
-```text
-/reports/{scan_id}
-```
-
-HTML report page:
-
-```text
-/reports/{scan_id}/html
-```
-
----
-
-### app/scheduler.py
-
-Handles scheduled scans.
-
-Important note:
-
-The current `scheduler.py` references `assets` and `asset_id`, while the main database flow uses `targets` and `target_id`.
-
-If scheduled scans do not work, check and fix this mapping first:
-
-```text
-assets   -> targets
-asset_id -> target_id
-```
-
-Manual scans follow the `/scan/{target_id}` route in `main.py` and `worker.run_scan_job()`.
-
----
-
-## Detailed Data Flow
-
-### 1. Target Registration
-
-Targets are registered through a web form or file upload.
-
-Stored in:
-
-```text
-targets
-```
-
-Example fields:
-
-- id
-- value
-- label
-- criticality
-- active
-- created_at
-
----
-
-### 2. Scan Job Creation
-
-Manual scan requests create a scan job.
-
-Stored in:
-
-```text
-scan_jobs
-```
-
-Main fields:
-
-- target_id
-- job_type
-- status
-- progress
-- stage
-- message
-- scan_id
-
----
-
-### 3. Port Scan
-
-`scanner.tcp_scan()` checks selected ports for reachability.
-
-The result is passed to the Nmap stage.
-
----
-
-### 4. Nmap Service Detection
-
-Nmap detects service and version information on open ports.
-
-Stored in:
-
-```text
-ports
-```
-
----
-
-### 5. Nuclei Vulnerability Detection
-
-Nuclei runs against generated web URLs.
-
-Stored in:
-
-```text
-findings
-```
-
----
-
-### 6. CVE / EPSS / KEV Enrichment
-
-Findings are enriched with:
-
-- CVE ID
-- CVSS
-- EPSS
-- EPSS percentile
-- KEV status
-- confidence
-- source
-
----
-
-### 7. Web Enrichment
-
-Technology evidence and screenshots are collected.
-
-Stored in:
+Stores results in:
 
 ```text
 tech_detections
@@ -525,11 +369,14 @@ screenshots
 
 ---
 
-### 8. Recommendation Generation
+### 12. recommendations.py
 
-Remediation recommendations are generated from services and vulnerabilities.
+Responsibilities:
 
-Stored in:
+- Build remediation guidance from ports and findings
+- Provide UI/report-compatible recommendation rows
+
+Stores results in:
 
 ```text
 recommendations
@@ -537,220 +384,239 @@ recommendations
 
 ---
 
-### 9. Change Detection
+### 13. scheduler.py
 
-The current scan is compared with previous scans.
+Responsibilities:
 
-Stored in:
+- Start APScheduler
+- Register scheduled scan job
+- Report scheduler status
 
-```text
-changes
-```
+Important current issue:
 
-Examples:
+The current scheduler code references `assets` and `asset_id`, while the main database schema uses `targets` and `target_id`.
 
-- new_open_port
-- service_changed
-- new_finding
-- baseline_created
-
----
-
-### 10. Risk Score Calculation
-
-`risk.calculate_risk_detail()` calculates the final risk score.
-
-Stored in:
-
-```text
-scans
-risk_reasons
-risk_issues
-```
-
----
-
-## Status Values
-
-### scan_jobs.status
-
-| Value | Meaning |
-|---|---|
-| `queued` | Job created |
-| `running` | Job running |
-| `done` | Completed |
-| `partial_success` | Some stages failed, but useful output exists |
-| `failed` | Failed |
-
-### scans.status
-
-| Value | Meaning |
-|---|---|
-| `running` | Scan running |
-| `done` | Completed successfully |
-| `partial_success` | Partially completed |
-| `failed` | Failed |
-
----
-
-## Operational Commands
-
-Check container status:
-
-```bash
-docker compose ps
-```
-
-Follow logs:
-
-```bash
-docker compose logs -f asm-lite
-```
-
-Open a container shell:
-
-```bash
-docker compose exec asm-lite bash
-```
-
-Check tools:
-
-```bash
-nmap --version
-nuclei -version
-python --version
-```
-
-Check database files:
-
-```bash
-ls -al /data
-```
-
-Check reports:
-
-```bash
-ls -al /app/reports
-```
-
-Check screenshots:
-
-```bash
-ls -al /app/app/static/screenshots
-```
-
----
-
-## Troubleshooting
-
-### Scan is stuck in running state
-
-Check in this order:
-
-1. Container logs
-2. `scan_jobs.message`
-3. Nmap timeout
-4. Nuclei timeout
-5. Screenshot timeout
-6. SQLite lock
-
-Logs:
-
-```bash
-docker compose logs -f asm-lite
-```
-
----
-
-### Nmap results are empty
-
-Possible causes:
-
-- Target is unreachable
-- Ports are closed
-- DNS resolution failed
-- Container network issue
-- Nmap timeout
-
-Direct test inside the container:
-
-```bash
-nmap -sV --version-light -p 80,443 example.com
-```
-
----
-
-### Nuclei results are empty
-
-Possible causes:
-
-- No detected web ports
-- Target URL was not generated
-- No template matches
-- Nuclei execution failed
-- Timeout
-
-Check:
-
-```bash
-nuclei -version
-```
-
----
-
-### Screenshot failed
-
-Possible causes:
-
-- Web service is unreachable
-- TLS issue
-- Slow target response
-- Playwright Chromium issue
-- Output directory permission issue
-
-Check:
-
-```bash
-python -m playwright --version
-ls -al /app/app/static/screenshots
-```
-
----
-
-### SQLite database locked
-
-SQLite write contention may occur.
-
-The project uses WAL mode and retry helpers. If the issue repeats, check:
-
-- Concurrent scan count
-- Long-running transactions
-- Docker volume performance
-- Whether writes use safe helper functions
-
----
-
-### Scheduled scan error
-
-The current `scheduler.py` has a table/column naming mismatch.
-
-Expected fix direction:
+If scheduled scans are required, update:
 
 ```text
 assets   -> targets
 asset_id -> target_id
 ```
 
-Fix this before relying on scheduled scans.
+Manual scans are not affected because they use `/scan/{target_id}`.
 
 ---
 
-## Operational Recommendations
+## Data Flow (Detailed)
 
-- Register only authorized targets.
+```text
+targets
+  |
+  v
+scan_jobs
+  |
+  v
+scans
+  |
+  +--> ports
+  +--> findings
+  +--> changes
+  +--> tech_detections
+  +--> screenshots
+  +--> recommendations
+  +--> risk_reasons
+  +--> risk_issues
+```
+
+Expanded flow:
+
+```text
+Nmap XML
+-> Parser
+-> SQLite ports
+-> Merge with Nuclei findings
+-> CVE / EPSS / KEV enrichment
+-> Web enrichment
+-> Recommendation generation
+-> Change detection
+-> Risk calculation
+-> Final report
+```
+
+---
+
+## Concurrency & Execution Model
+
+- FastAPI handles HTTP routes.
+- Scan jobs are tracked in `scan_jobs`.
+- Worker logic executes the scan pipeline.
+- TCP scanning is asynchronous.
+- Nmap and Nuclei are executed through subprocess calls.
+- SQLite uses WAL mode and retry helpers for selected writes.
+- Scheduler support exists, but scheduled scan table names should be aligned before relying on it.
+
+Execution types:
+
+- manual scan through Web UI
+- API-protected result retrieval
+- scheduled scan after scheduler table-name fix
+
+---
+
+## Error Handling
+
+Handled scenarios:
+
+- Nmap missing
+- Nmap timeout
+- Nuclei missing
+- Nuclei timeout
+- CVE enrichment failure
+- web enrichment failure
+- screenshot failure
+- partial output preservation
+- SQLite lock retry for selected writes
+
+A scan may become `partial_success` when core scan data exists but a later enrichment stage fails.
+
+---
+
+## Performance Considerations
+
+- TCP scanning is asynchronous.
+- Large port ranges increase scan time.
+- `full` profile can be slow.
+- Nmap service detection is heavier than raw TCP checks.
+- Nuclei execution depends on target count and template behavior.
+- Screenshot capture can be slow for unstable web services.
+- SQLite is acceptable for local or small usage but not ideal for heavy concurrent scanning.
+
+---
+
+## Security Considerations
+
+- Input validation is required for target values.
+- Avoid command injection by using list-based subprocess commands.
+- Limit scan scope.
+- Keep API keys private.
 - Do not expose `ADMIN_API_KEY.txt`.
-- Provide `NVD_API_KEY` through `.env`.
-- Back up `/data/asm_lite.db` regularly.
-- Use the `full` scan profile only when necessary.
-- Investigate `partial_success` results instead of ignoring them.
-- Do not treat Nmap/NVD candidate CVEs as confirmed vulnerabilities without validation.
+- Do not publish reports or screenshots containing sensitive target information.
+- Use the tool only against authorized assets.
+
+---
+
+## Scaling Strategy
+
+Future design:
+
+- Worker queue with Redis or RabbitMQ
+- Distributed scanning nodes
+- Persistent database with PostgreSQL
+- Per-target scan policies
+- Per-scan timeout policies
+- Worker health checks
+- Audit logs
+- Role-based access control
+- Central reporting dashboard
+
+---
+
+## Known Limitations
+
+- Dependent on external tool accuracy.
+- No horizontal scaling implemented.
+- Scheduled scan code needs table-name alignment.
+- Limited historical analytics.
+- SQLite can become a bottleneck under heavy concurrency.
+- Candidate CVE enrichment should not be treated as proof of exploitation.
+- AI-generated summaries should be reviewed before formal reporting.
+
+---
+
+## Troubleshooting
+
+### Scan stuck in running state
+
+Check:
+
+```bash
+docker compose logs -f asm-lite
+```
+
+Then inspect:
+
+- `scan_jobs.status`
+- `scan_jobs.stage`
+- `scan_jobs.message`
+- Nmap timeout
+- Nuclei timeout
+- Screenshot timeout
+- DB lock errors
+
+---
+
+### Nmap result is empty
+
+Possible causes:
+
+- Target unreachable
+- Ports closed
+- DNS failure
+- Nmap timeout
+- Container network issue
+
+Manual check:
+
+```bash
+docker compose exec asm-lite nmap -sV --version-light -p 80,443 example.com
+```
+
+---
+
+### Nuclei result is empty
+
+Possible causes:
+
+- No detected web ports
+- No generated URL
+- No matching templates
+- Nuclei timeout
+- Nuclei binary issue
+
+Check:
+
+```bash
+docker compose exec asm-lite nuclei -version
+```
+
+---
+
+### Screenshot capture failed
+
+Possible causes:
+
+- Web service unreachable
+- TLS error
+- Slow response
+- Playwright issue
+- Output path permission issue
+
+Check:
+
+```bash
+docker compose exec asm-lite python -m playwright --version
+docker compose exec asm-lite ls -al /app/app/static/screenshots
+```
+
+---
+
+## Best Practice
+
+- Always validate scan outputs before processing.
+- Keep Nmap and Nuclei updated.
+- Monitor scan performance and failures.
+- Use `standard` as the default practical scan profile.
+- Use `full` only when broad coverage is necessary.
+- Treat `partial_success` as useful but incomplete output.
+- Review candidate CVEs before reporting them as confirmed vulnerabilities.
+- Back up the SQLite database if scan history matters.
